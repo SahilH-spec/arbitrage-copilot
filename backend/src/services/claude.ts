@@ -153,6 +153,53 @@ Return ONLY valid JSON, no markdown.
   }
 }
 
+// ─── Sourcing Estimate ────────────────────────────────────────────────────────
+export async function estimateSourcing(input: {
+  title: string;
+  brand: string;
+  category: string;
+  amazonPrice: number;
+  suppliers: string[];
+}): Promise<{ estimatedSourcePrice: number; suggestedSource: string; rationale: string }> {
+  const anthropic = getClient();
+  const prompt = `
+You are an Amazon online-arbitrage sourcing expert. For this product, estimate the most likely
+retail/wholesale SOURCE cost and which store to buy it from.
+
+Product: ${input.title}
+Brand: ${input.brand || "n/a"}
+Category: ${input.category}
+Current Amazon sell price: $${input.amazonPrice.toFixed(2)}
+Candidate suppliers: ${input.suppliers.join(", ")}
+
+Estimate a realistic source price (what you'd actually pay at retail/wholesale, often 40-70% of the
+Amazon price for viable arbitrage, accounting for sales/clearance/coupons). Pick the single best
+source from the candidate list.
+
+Return ONLY JSON: {"estimatedSourcePrice": <number>, "suggestedSource": "<store>", "rationale": "<one sentence>"}
+`;
+
+  const response = await anthropic.messages.create({
+    model: MODELS.fast,
+    max_tokens: 256,
+    messages: [{ role: "user", content: prompt }],
+  });
+  const content = response.content[0];
+  if (content.type !== "text") {
+    return { estimatedSourcePrice: input.amazonPrice * 0.6, suggestedSource: input.suppliers[0] || "Walmart", rationale: "Estimate unavailable" };
+  }
+  try {
+    const json = JSON.parse(content.text.match(/\{[\s\S]*\}/)?.[0] || "{}");
+    return {
+      estimatedSourcePrice: Number(json.estimatedSourcePrice) || input.amazonPrice * 0.6,
+      suggestedSource: json.suggestedSource || input.suppliers[0] || "Walmart",
+      rationale: json.rationale || "",
+    };
+  } catch {
+    return { estimatedSourcePrice: input.amazonPrice * 0.6, suggestedSource: input.suppliers[0] || "Walmart", rationale: "Estimate unavailable" };
+  }
+}
+
 // ─── Inventory Alert Analysis ─────────────────────────────────────────────────
 export async function analyzeInventoryAlerts(items: Array<{
   asin: string;

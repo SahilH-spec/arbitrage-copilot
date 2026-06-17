@@ -72,6 +72,8 @@ export async function getKeepaProduct(asin: string): Promise<KeepaProduct | null
 
 export interface ProductMetrics {
   asin: string;
+  title: string;
+  brand: string;
   currentAmazonPrice: number;
   buyBoxPrice: number;
   bsrRank: number;
@@ -125,6 +127,8 @@ export async function getProductMetrics(asin: string): Promise<ProductMetrics | 
 
   return {
     asin: product.asin,
+    title: product.title || "Unknown product",
+    brand: product.brand || "",
     currentAmazonPrice: keepaPriceToUSD(product.amazonPrice),
     buyBoxPrice: keepaPriceToUSD(product.buyBoxPrice),
     bsrRank: bsr,
@@ -161,6 +165,83 @@ function estimateFbaFee(price: number): number {
   if (price < 100) return 5.5;
   return 7.0;
 }
+
+// ─── Product Finder ───────────────────────────────────────────────────────────
+// Keepa "query" endpoint returns REAL ASINs matching a selection filter.
+// Docs: https://keepa.com/#!discuss/t/product-finder/
+export interface FinderOptions {
+  maxBsr?: number;        // sales rank ceiling (lower = sells faster)
+  minPriceCents?: number; // min current NEW price in cents
+  maxPriceCents?: number; // max current NEW price in cents
+  categoryId?: number;    // Keepa rootCategory id (optional)
+  limit?: number;         // how many ASINs to return
+}
+
+export async function findProducts(opts: FinderOptions = {}): Promise<string[]> {
+  if (!config.keepa.apiKey) {
+    console.warn("[Keepa] API key not configured — cannot run product finder");
+    return [];
+  }
+
+  const {
+    maxBsr = 100000,
+    minPriceCents = 1200,   // $12
+    maxPriceCents = 8000,   // $80
+    categoryId,
+    limit = 30,
+  } = opts;
+
+  const selection: Record<string, unknown> = {
+    current_SALES_gte: 1,
+    current_SALES_lte: maxBsr,
+    current_NEW_gte: minPriceCents,
+    current_NEW_lte: maxPriceCents,
+    sort: [["current_SALES", "asc"]],
+    perPage: Math.min(limit, 50),
+    page: 0,
+    productType: [0, 1],
+  };
+  if (categoryId) selection.rootCategory = categoryId;
+
+  const params = new URLSearchParams({
+    key: config.keepa.apiKey,
+    domain: "1",
+    selection: JSON.stringify(selection),
+  });
+
+  try {
+    const response = await fetch(`${BASE_URL}/query?${params}`);
+    if (!response.ok) {
+      console.error(`[Keepa] Product finder failed: ${response.status}`);
+      return [];
+    }
+    const data = (await response.json()) as { asinList?: string[]; error?: { message: string } };
+    if (data.error) {
+      console.error(`[Keepa] Product finder error: ${data.error.message}`);
+      return [];
+    }
+    return (data.asinList || []).slice(0, limit);
+  } catch (err) {
+    console.error("[Keepa] Product finder exception:", err);
+    return [];
+  }
+}
+
+// US root category ids (Keepa domain 1)
+export const KEEPA_CATEGORIES: Record<string, number> = {
+  "Electronics": 172282,
+  "Home & Kitchen": 1055398,
+  "Toys & Games": 165793011,
+  "Sports & Outdoors": 3375251,
+  "Health & Household": 3760901,
+  "Office Products": 1064954,
+  "Pet Supplies": 2619533011,
+  "Beauty & Personal Care": 3760911,
+  "Tools & Home Improvement": 228013,
+  "Grocery & Gourmet Food": 16310101,
+  "Baby": 165796011,
+  "Garden & Outdoor": 2972638011,
+};
 
 export async function getBatchProductMetrics(asins: string[]): Promise<Map<string, ProductMetrics>> {
   const results = new Map<string, ProductMetrics>();

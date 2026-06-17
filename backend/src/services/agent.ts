@@ -1,8 +1,7 @@
 import { db } from "../db/client";
 import { reports, reportProducts, agentRuns, agentSettings, suppliers } from "../db/schema";
-import { runAgentResearch, analyzeProduct, generateReportSummary } from "./claude";
-import { braveSearch, researchTrendingProducts } from "./search";
-import { getProductMetrics } from "./keepa";
+import { analyzeProduct, generateReportSummary, estimateSourcing } from "./claude";
+import { getProductMetrics, findProducts, KEEPA_CATEGORIES } from "./keepa";
 import { eq } from "drizzle-orm";
 import { config } from "../config";
 
@@ -11,6 +10,7 @@ export interface AgentConfig {
   minRoi: number;
   minMonthlySales: number;
   minScore: number;
+  maxBsr: number;
   categories: string[];
   excludeCategories: string[];
   maxCompetitors: number;
@@ -35,6 +35,7 @@ export async function getAgentConfig(): Promise<AgentConfig> {
     minRoi: (map.minRoi as number) || config.agent.minRoi,
     minMonthlySales: (map.minMonthlySales as number) || config.agent.minMonthlySales,
     minScore: (map.minScore as number) || 60,
+    maxBsr: (map.maxBsr as number) || 100000,
     categories: (map.categories as string[]) || [
       "Electronics", "Home & Kitchen", "Sports & Outdoors", "Toys & Games",
     ],
@@ -70,62 +71,54 @@ export async function runAgentCycle(manual = false): Promise<number | null> {
     const agentConfig = await getAgentConfig();
     log(`Config: max ${agentConfig.maxProducts} products, min ROI ${agentConfig.minRoi}%, min score ${agentConfig.minScore}`);
 
-    // ── Phase 1: Market Trend Research ────────────────────────────────────────
-    log("Phase 1: Researching market trends...");
-    const trendPrompt = `
-Research today's best Amazon online arbitrage opportunities. Focus on:
-1. Currently trending products across these categories: ${agentConfig.categories.join(", ")}
-2. Products with strong BSR ranks (high sales velocity)
-3. Items available at retail stores or online for less than Amazon price
-4. Products NOT sold directly by Amazon (or where Amazon is out of stock)
+    // Load suppliers once (used for sourcing estimates + report recommendations)
+    const allSuppliers = await db.select().from(suppliers).where(eq(suppliers.active, true));
+    const supplierNames = allSuppliers.map((s) => s.name);
+    const recommendSuppliers = (category: string) => {
+      const cat = (category || "").toLowerCase();
+      const matched = allSuppliers.filter(
+        (s) =>
+          s.category &&
+          (cat.includes(s.category.toLowerCase().split(" ")[0]) ||
+            s.category.toLowerCase().includes(cat.split(" ")[0]) ||
+            s.type === "wholesale")
+      ).slice(0, 4);
+      const pool = matched.length >= 2 ? matched : allSuppliers.slice(0, 4);
+      return pool.map((s) => ({ name: s.name, website: s.website, couponsAvailable: s.couponsAvailable, avgDiscount: s.avgDiscount, type: s.type }));
+    };
 
-Identify 10-15 specific product opportunities. For each, provide:
-- Product name/description
-- ASIN if known
-- Estimated Amazon selling price
-- Where to source it (store name + estimated source price)
-- Why it's a good opportunity
+    // ── Phase 1: Discover real ASINs via Keepa Product Finder ─────────────────
+    log("Phase 1: Finding real products via Keepa Product Finder...");
+    const asinSet = new Set<string>();
+    const categoriesToScan = agentConfig.categories.slice(0, 6);
+    const perCat = Math.max(8, Math.ceil((agentConfig.maxProducts * 2) / Math.max(1, categoriesToScan.length)));
 
-Format as JSON array:
-[{
-  "title": "...",
-  "asin": "...",
-  "category": "...",
-  "estimatedAmazonPrice": 0,
-  "sourceStore": "...",
-  "estimatedSourcePrice": 0,
-  "reason": "..."
-}]
-`;
-
-    const researchResult = await runAgentResearch(trendPrompt);
-    log("Phase 1 complete — parsing product candidates");
-
-    let candidates: Array<{
-      title: string;
-      asin: string;
-      category: string;
-      estimatedAmazonPrice: number;
-      sourceStore: string;
-      estimatedSourcePrice: number;
-      reason: string;
-    }> = [];
-
-    try {
-      const jsonMatch = researchResult.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        candidates = JSON.parse(jsonMatch[0]);
-      }
-    } catch {
-      log("Warning: Could not parse research JSON — using text extraction");
+    for (const catName of categoriesToScan) {
+      const catId = KEEPA_CATEGORIES[catName];
+      const found = await findProducts({
+        maxBsr: agentConfig.maxBsr || 100000,
+        minPriceCents: 1200,
+        maxPriceCents: 8000,
+        categoryId: catId,
+        limit: perCat,
+      }).catch(() => [] as string[]);
+      found.forEach((a) => asinSet.add(a));
+      log(`  ${catName}: ${found.length} candidates`);
     }
 
-    log(`Found ${candidates.length} initial candidates`);
+    // Fallback: category-agnostic sweep if categories returned little
+    if (asinSet.size < agentConfig.maxProducts) {
+      const broad = await findProducts({ maxBsr: agentConfig.maxBsr || 100000, limit: agentConfig.maxProducts * 2 }).catch(() => [] as string[]);
+      broad.forEach((a) => asinSet.add(a));
+    }
 
-    // ── Phase 2: Deep Product Analysis ────────────────────────────────────────
-    log("Phase 2: Running Keepa analysis on candidates...");
+    const asinList = Array.from(asinSet).slice(0, agentConfig.maxProducts * 2);
+    log(`Phase 1 complete — ${asinList.length} real ASINs to analyze`);
+
+    // ── Phase 2: Pull real metrics + estimate sourcing + score ────────────────
+    log("Phase 2: Analyzing products (Keepa metrics + sourcing estimate)...");
     const analyzedProducts: Array<{
-      candidate: (typeof candidates)[0];
+      candidate: { title: string; asin: string; category: string; estimatedAmazonPrice: number; sourceStore: string; estimatedSourcePrice: number };
       metrics: Awaited<ReturnType<typeof getProductMetrics>>;
       analysis: {
         score: number;
@@ -136,30 +129,38 @@ Format as JSON array:
       };
     }> = [];
 
-    for (const candidate of candidates.slice(0, agentConfig.maxProducts * 2)) {
-      if (!candidate.asin) {
-        log(`Skipping "${candidate.title}" — no ASIN`);
+    for (const asin of asinList) {
+      const metrics = await getProductMetrics(asin).catch(() => null);
+      if (!metrics || !metrics.buyBoxPrice || metrics.buyBoxPrice <= 0) {
         continue;
       }
 
-      log(`Analyzing ${candidate.asin}: ${candidate.title.slice(0, 50)}`);
+      const sellPrice = metrics.buyBoxPrice;
+      const category = metrics.bsrCategory || "General";
+      log(`Analyzing ${asin}: ${metrics.title.slice(0, 45)}`);
 
-      const metrics = await getProductMetrics(candidate.asin).catch(() => null);
+      // Estimate sourcing (source price + best store)
+      const sourcing = await estimateSourcing({
+        title: metrics.title,
+        brand: metrics.brand,
+        category,
+        amazonPrice: sellPrice,
+        suppliers: supplierNames.slice(0, 12),
+      }).catch(() => ({ estimatedSourcePrice: sellPrice * 0.6, suggestedSource: supplierNames[0] || "Walmart", rationale: "" }));
 
-      const buyPrice = candidate.estimatedSourcePrice;
-      const sellPrice = metrics?.buyBoxPrice || candidate.estimatedAmazonPrice;
-      const fbaFees = metrics?.fbaFeeEstimate || sellPrice * 0.15 + 3.5;
+      const buyPrice = sourcing.estimatedSourcePrice;
+      const fbaFees = metrics.fbaFeeEstimate || sellPrice * 0.15 + 3.5;
 
       const analysis = await analyzeProduct({
-        asin: candidate.asin,
-        title: candidate.title,
-        category: candidate.category,
+        asin,
+        title: metrics.title,
+        category,
         currentPrice: sellPrice,
-        bsrRank: metrics?.bsrRank || 999999,
-        monthlySales: metrics?.monthlySalesEst || 0,
-        competitorCount: metrics?.sellerCount || 0,
-        priceHistory: metrics?.priceHistory90d || [],
-        sourceStore: candidate.sourceStore,
+        bsrRank: metrics.bsrRank || 999999,
+        monthlySales: metrics.monthlySalesEst || 0,
+        competitorCount: metrics.sellerCount || 0,
+        priceHistory: metrics.priceHistory90d || [],
+        sourceStore: sourcing.suggestedSource,
         sourcePrice: buyPrice,
         fbaFees,
       }).catch(() => ({
@@ -167,10 +168,21 @@ Format as JSON array:
         criteriaDetails: {},
         aiAnalysis: "Analysis unavailable",
         estimatedProfit: sellPrice - buyPrice - fbaFees,
-        estimatedRoi: ((sellPrice - buyPrice - fbaFees) / buyPrice) * 100,
+        estimatedRoi: buyPrice > 0 ? ((sellPrice - buyPrice - fbaFees) / buyPrice) * 100 : 0,
       }));
 
-      analyzedProducts.push({ candidate, metrics, analysis });
+      analyzedProducts.push({
+        candidate: {
+          title: metrics.title,
+          asin,
+          category,
+          estimatedAmazonPrice: sellPrice,
+          sourceStore: sourcing.suggestedSource,
+          estimatedSourcePrice: buyPrice,
+        },
+        metrics,
+        analysis,
+      });
     }
 
     // ── Phase 3: Filter & Rank ─────────────────────────────────────────────────
@@ -208,28 +220,7 @@ Format as JSON array:
       reportId = newReport.id;
     }
 
-    // Load suppliers once for recommendations
-    const allSuppliers = await db.select().from(suppliers).where(eq(suppliers.active, true));
-    const recommendSuppliers = (category: string) => {
-      const cat = (category || "").toLowerCase();
-      const matched = allSuppliers
-        .filter((s) =>
-          s.category && (cat.includes(s.category.toLowerCase().split(" ")[0]) ||
-          s.category.toLowerCase().includes(cat.split(" ")[0]) ||
-          s.type === "wholesale")
-        )
-        .slice(0, 4);
-      const pool = matched.length >= 2 ? matched : allSuppliers.slice(0, 4);
-      return pool.map((s) => ({
-        name: s.name,
-        website: s.website,
-        couponsAvailable: s.couponsAvailable,
-        avgDiscount: s.avgDiscount,
-        type: s.type,
-      }));
-    };
-
-    // Insert report products
+    // Insert report products (suppliers loaded in Phase 1)
     for (const p of qualifiedProducts) {
       const m = p.metrics;
       const a = p.analysis;
