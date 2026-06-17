@@ -1,0 +1,21 @@
+{
+  "name": "Nightly arbitrage research",
+  "agent": "REPLACE_WITH_AGENT_ID",
+  "environment_id": "REPLACE_WITH_ENVIRONMENT_ID",
+  "initial_events": [
+    {
+      "type": "user.message",
+      "content": [
+        {
+          "type": "text",
+          "text": "Run the full nightly research cycle now. Discover real candidate products with keepa_find_products across my active categories, pull metrics with keepa_product_metrics, estimate sourcing and pick suppliers with lookup_suppliers, score every product against the criteria, then save the ranked report with save_daily_report. Surface the top candidates as a watchlist if fewer than 5 fully qualify."
+        }
+      ]
+    }
+  ],
+  "schedule": {
+    "type": "cron",
+    "expression": "0 4 * * *",
+    "timezone": "America/New_York"
+  }
+}

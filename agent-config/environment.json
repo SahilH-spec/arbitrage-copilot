@@ -1,0 +1,10 @@
+{
+  "name": "arbitrage-copilot-env",
+  "description": "Sandbox for the Arbitrage Copilot research agent. Cloud-hosted by Anthropic; unrestricted egress so the agent can use web_search / web_fetch for market, trend, and supplier research.",
+  "config": {
+    "type": "cloud",
+    "networking": {
+      "type": "unrestricted"
+    }
+  }
+}
