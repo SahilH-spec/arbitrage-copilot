@@ -1,17 +1,11 @@
 [build]
 builder = "nixpacks"
-buildCommand = "npm run build"
+# Force-install dev deps (typescript, vite) even when NODE_ENV=production
+buildCommand = "npm install --include=dev && npm run build"
 
 [deploy]
 startCommand = "npm run start"
 healthcheckPath = "/api/health"
-healthcheckTimeout = 30
+healthcheckTimeout = 100
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
-
-[[services]]
-name = "arbitrage-copilot"
-
-[services.variables]
-NODE_ENV = "production"
-PORT = "3001"

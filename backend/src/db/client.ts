@@ -5,7 +5,9 @@ import { config } from "../config";
 
 const pool = new Pool({
   connectionString: config.db.url,
-  ssl: config.env === "production" ? { rejectUnauthorized: false } : false,
+  // Railway's internal Postgres does NOT use SSL. Only enable SSL for
+  // external databases that require it (set DATABASE_SSL=true).
+  ssl: process.env.DATABASE_SSL === "true" ? { rejectUnauthorized: false } : false,
   max: 10,
   idleTimeoutMillis: 30000,
 });
