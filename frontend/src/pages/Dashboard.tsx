@@ -1,338 +1,285 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  TrendingUp, TrendingDown, Package, DollarSign, Bot, FileText,
-  CheckCircle, Clock, AlertTriangle, ArrowRight, Activity, Zap,
+  DollarSign, TrendingUp, Package, BarChart2, RefreshCw,
+  ChevronRight, CheckCircle2, ArrowUpRight, ArrowDownRight,
 } from "lucide-react";
-import { Header } from "@/components/layout/Header";
-import { dashboardApi, DashboardData } from "@/lib/api";
-import { formatCurrency, formatNumber, getScoreBg, formatRelativeTime, cronToHuman } from "@/lib/utils";
-import { cn } from "@/lib/utils";
-import { Link } from "react-router-dom";
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { dashboardApi, inventoryApi, agentApi, DashboardData, InventoryItem } from "@/lib/api";
+import { formatCurrency, asinToAmazonUrl } from "@/lib/utils";
+
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+function StatCard({
+  label, value, sub, icon: Icon, color = "var(--muted-foreground)", trend, trendLabel,
+}: {
+  label: string; value: string; sub?: string; icon: typeof DollarSign;
+  color?: string; trend?: "up" | "down"; trendLabel?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-3 rounded-lg p-4" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
+      <div className="flex items-start justify-between">
+        <span className="section-title">{label}</span>
+        <div className="rounded p-1.5" style={{ background: "var(--accent)" }}>
+          <Icon size={13} style={{ color }} />
+        </div>
+      </div>
+      <div>
+        <div className="mono" style={{ fontSize: 24, fontWeight: 600, color: "var(--foreground)", letterSpacing: "-0.02em" }}>{value}</div>
+        {sub && <div style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: 2 }}>{sub}</div>}
+      </div>
+      {trendLabel && (
+        <div className="flex items-center gap-1">
+          {trend === "up" ? <ArrowUpRight size={12} style={{ color: "var(--profit)" }} /> : <ArrowDownRight size={12} style={{ color: "var(--loss)" }} />}
+          <span style={{ fontSize: 11, color: trend === "up" ? "var(--profit)" : "var(--loss)" }}>{trendLabel}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const ChartTooltip = ({ active, payload, label }: any) => {
+  if (active && payload?.length) {
+    return (
+      <div className="rounded p-2.5" style={{ background: "var(--popover)", border: "1px solid var(--border)", fontSize: 12 }}>
+        <p style={{ color: "var(--muted-foreground)", marginBottom: 4 }}>{label}</p>
+        <p style={{ color: "var(--profit)" }}>{formatCurrency(payload[0]?.value || 0)}</p>
+      </div>
+    );
+  }
+  return null;
+};
 
 export function Dashboard() {
-  const { data, isLoading, refetch, isRefetching } = useQuery({
-    queryKey: ["dashboard"],
-    queryFn: dashboardApi.get,
-    refetchInterval: 60000,
+  const qc = useQueryClient();
+  const [checkedTodos, setCheckedTodos] = useState<number[]>([]);
+
+  const { data, isLoading } = useQuery({ queryKey: ["dashboard"], queryFn: dashboardApi.get, refetchInterval: 60000 });
+  const { data: inventory } = useQuery({ queryKey: ["inventory"], queryFn: inventoryApi.list });
+
+  const syncMutation = useMutation({
+    mutationFn: agentApi.runNow,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["agent-status"] });
+    },
   });
+
+  const toggleTodo = (id: number) =>
+    setCheckedTodos((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
   if (isLoading) {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="text-center">
-          <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-border border-t-accent" />
-          <p className="text-sm text-muted-foreground">Loading dashboard...</p>
-        </div>
+      <div className="flex h-full items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2" style={{ borderColor: "var(--border)", borderTopColor: "var(--profit)" }} />
       </div>
     );
   }
 
   const d = data as DashboardData;
+  const dateStr = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  const todos = d?.todos || [];
+  const activity = d?.agent?.activity || [];
+  const feedItems = ((inventory as InventoryItem[]) || []).filter((i) => i.status === "active").slice(0, 6);
+  const acct = d?.accounting;
+  const hourly = d?.sales?.hourly?.length ? d.sales.hourly : [];
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
-      <Header
-        title="Dashboard"
-        subtitle={new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
-        onRefresh={() => refetch()}
-        isRefreshing={isRefetching}
-        isConnected={true}
-      />
+    <div className="flex min-h-full flex-col gap-5 p-6" style={{ color: "var(--foreground)" }}>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.01em" }}>{greeting()}.</h1>
+          <p style={{ fontSize: 13, color: "var(--muted-foreground)", marginTop: 2 }}>
+            {dateStr} · {d?.agent?.update || "Agent idle"}
+          </p>
+        </div>
+        <button
+          onClick={() => syncMutation.mutate()}
+          disabled={syncMutation.isPending || d?.agent?.isRunning}
+          className="flex items-center gap-2 rounded px-3 py-1.5 transition-opacity hover:opacity-80 disabled:opacity-50"
+          style={{ background: "var(--accent)", border: "1px solid var(--border)", fontSize: 12, color: "var(--foreground)" }}
+        >
+          <RefreshCw size={12} className={syncMutation.isPending || d?.agent?.isRunning ? "animate-spin" : ""} />
+          {d?.agent?.isRunning ? "Syncing..." : "Sync Now"}
+        </button>
+      </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-        {/* Integration warnings */}
-        {d && !d.integrations?.anthropic && (
-          <div className="flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
-            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
-            <p className="text-sm text-amber-400">
-              Anthropic API key not set — AI features disabled. Add{" "}
-              <code className="font-mono text-xs">ANTHROPIC_API_KEY</code> to your .env file.
-            </p>
+      {/* Stat Cards */}
+      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+        <StatCard label="Today's Revenue" value={formatCurrency(d?.sales?.today?.revenue || 0)} sub={`${d?.sales?.today?.orders || 0} orders`} icon={DollarSign} color="var(--profit)" />
+        <StatCard label="Profit Today" value={formatCurrency(acct?.profitToday || 0)} sub="net today" icon={TrendingUp} color="var(--profit)" />
+        <StatCard label="Active Listings" value={String(d?.inventory?.activeProducts || 0)} sub={`${d?.inventory?.totalAtAmazon || 0} units at FBA`} icon={Package} color="var(--agent)" />
+        <StatCard label="Buy Box %" value={d?.inventory?.buyBoxPct != null ? `${d.inventory.buyBoxPct.toFixed(1)}%` : "—"} sub={`${d?.inventory?.activeProducts || 0} SKUs`} icon={BarChart2} color="var(--warning)" />
+      </div>
+
+      {/* Chart + Agent Activity */}
+      <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 380px" }}>
+        <div className="rounded-lg p-4" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 style={{ fontSize: 13, fontWeight: 500 }}>Revenue Today</h3>
+              <p style={{ fontSize: 11, color: "var(--muted-foreground)" }}>Hourly breakdown</p>
+            </div>
+            <span className="mono" style={{ fontSize: 20, fontWeight: 600, color: "var(--profit)" }}>{formatCurrency(d?.sales?.today?.revenue || 0)}</span>
           </div>
-        )}
-
-        {/* ── Sales KPIs ── */}
-        <section>
-          <p className="section-title mb-3">Live Sales</p>
-          <div className="grid grid-cols-4 gap-3">
-            <StatCard
-              label="Today's Revenue"
-              value={formatCurrency(d?.sales?.today?.revenue || 0)}
-              sub={`${d?.sales?.today?.orders || 0} orders`}
-              icon={DollarSign}
-              positive={true}
-            />
-            <StatCard
-              label="This Week"
-              value={formatCurrency(d?.sales?.thisWeek?.revenue || 0)}
-              sub={`${d?.sales?.thisWeek?.units || 0} units`}
-              icon={TrendingUp}
-              positive={true}
-            />
-            <StatCard
-              label="This Month"
-              value={formatCurrency(d?.sales?.thisMonth?.revenue || 0)}
-              sub={`${d?.sales?.thisMonth?.orders || 0} orders`}
-              icon={Activity}
-              positive={true}
-            />
-            <StatCard
-              label="Monthly Profit"
-              value={formatCurrency(d?.accounting?.monthlyProfit || 0)}
-              sub={`${(d?.accounting?.profitMargin || 0).toFixed(1)}% margin`}
-              icon={d?.accounting?.monthlyProfit >= 0 ? TrendingUp : TrendingDown}
-              positive={(d?.accounting?.monthlyProfit || 0) >= 0}
-            />
-          </div>
-        </section>
-
-        {/* ── Main Content Row ── */}
-        <div className="grid grid-cols-3 gap-4">
-          {/* Agent Status */}
-          <div className="stat-card col-span-1 flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <p className="section-title">AI Agent</p>
-              <Link to="/agent" className="text-xs text-accent hover:underline">
-                Manage →
-              </Link>
+          {hourly.length > 0 ? (
+            <ResponsiveContainer width="100%" height={160}>
+              <AreaChart data={hourly} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                <XAxis dataKey="time" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} />
+                <Tooltip content={<ChartTooltip />} />
+                <Area type="monotone" dataKey="revenue" stroke="var(--profit)" strokeWidth={1.5} fill="var(--profit)" fillOpacity={0.1} dot={false} />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center" style={{ height: 160, fontSize: 12, color: "var(--muted-foreground)" }}>
+              No sales recorded yet today
             </div>
-
-            <div className="flex items-center gap-3">
-              <div className={cn(
-                "flex h-10 w-10 items-center justify-center rounded-full",
-                d?.agent?.isRunning ? "bg-accent/10" : "bg-secondary"
-              )}>
-                <Bot className={cn(
-                  "h-5 w-5",
-                  d?.agent?.isRunning ? "text-accent animate-pulse-glow" : "text-muted-foreground"
-                )} />
-              </div>
-              <div>
-                <p className="font-medium text-sm text-foreground">
-                  {d?.agent?.isRunning ? "Running research..." : "Idle"}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {d?.agent?.scheduler?.schedule
-                    ? cronToHuman(d.agent.scheduler.schedule)
-                    : "Not scheduled"}
-                </p>
-              </div>
-            </div>
-
-            {d?.agent?.lastRun && (
-              <div className="rounded-lg bg-secondary/50 px-3 py-2">
-                <p className="text-xs text-muted-foreground">Last run</p>
-                <p className="text-sm font-medium text-foreground">
-                  {d.agent.lastRun.productsFound} products found
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {formatRelativeTime(d.agent.lastRun.createdAt)}
-                </p>
-              </div>
-            )}
-
-            <Link
-              to="/agent"
-              className="flex items-center justify-center gap-2 rounded-lg border border-accent/30 bg-accent/5 py-2 text-xs font-medium text-accent transition-colors hover:bg-accent/10"
-            >
-              <Zap className="h-3.5 w-3.5" />
-              Run Now
-            </Link>
-          </div>
-
-          {/* Today's Report */}
-          <div className="stat-card col-span-1 flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <p className="section-title">Today's Report</p>
-              <Link to="/reports" className="text-xs text-accent hover:underline">View all →</Link>
-            </div>
-
-            {d?.report ? (
-              <>
-                <div className="flex items-center gap-2">
-                  <span className={cn(
-                    "rounded-full px-2 py-0.5 text-xs font-medium",
-                    d.report.status === "completed" ? "bg-accent/10 text-accent" :
-                    d.report.status === "generating" ? "bg-amber-400/10 text-amber-400" :
-                    "bg-secondary text-muted-foreground"
-                  )}>
-                    {d.report.status}
-                  </span>
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="rounded-lg bg-secondary/50 py-2">
-                    <p className="text-lg font-bold text-foreground">{d.report.totalProductsFound}</p>
-                    <p className="text-xs text-muted-foreground">Found</p>
-                  </div>
-                  <div className="rounded-lg bg-accent/5 py-2">
-                    <p className="text-lg font-bold text-accent">{d.report.approvedCount}</p>
-                    <p className="text-xs text-muted-foreground">Approved</p>
-                  </div>
-                  <div className="rounded-lg bg-red-500/5 py-2">
-                    <p className="text-lg font-bold text-red-400">{d.report.rejectedCount}</p>
-                    <p className="text-xs text-muted-foreground">Rejected</p>
-                  </div>
-                </div>
-                {d.report.summary && (
-                  <p className="text-xs text-muted-foreground line-clamp-3">{d.report.summary}</p>
-                )}
-                <Link
-                  to="/reports"
-                  className="flex items-center justify-center gap-2 rounded-lg border border-border py-2 text-xs font-medium text-foreground transition-colors hover:bg-secondary"
-                >
-                  <FileText className="h-3.5 w-3.5" />
-                  Review Products
-                </Link>
-              </>
-            ) : (
-              <div className="flex flex-1 flex-col items-center justify-center py-6 text-center">
-                <FileText className="mb-2 h-8 w-8 text-muted-foreground/30" />
-                <p className="text-sm text-muted-foreground">No report today</p>
-                <p className="text-xs text-muted-foreground/60">Run the agent to generate one</p>
-              </div>
-            )}
-          </div>
-
-          {/* Inventory Summary */}
-          <div className="stat-card col-span-1 flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <p className="section-title">Inventory</p>
-              <Link to="/inventory" className="text-xs text-accent hover:underline">Manage →</Link>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Package className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-foreground">Active Products</span>
-                </div>
-                <span className="font-semibold text-foreground">{d?.inventory?.activeProducts || 0}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Total Value</span>
-                <span className="font-semibold text-foreground">{formatCurrency(d?.inventory?.totalValue || 0)}</span>
-              </div>
-              {(d?.inventory?.lowStockAlerts || 0) > 0 && (
-                <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
-                  <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
-                  <span className="text-xs text-amber-400">
-                    {d.inventory.lowStockAlerts} low stock alert{d.inventory.lowStockAlerts !== 1 ? "s" : ""}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-auto">
-              <div className="flex items-center justify-between rounded-lg bg-secondary/50 px-3 py-2">
-                <span className="text-xs text-muted-foreground">Monthly P&L</span>
-                <span className={cn(
-                  "text-sm font-semibold",
-                  (d?.accounting?.monthlyProfit || 0) >= 0 ? "text-emerald-400" : "text-red-400"
-                )}>
-                  {formatCurrency(d?.accounting?.monthlyProfit || 0)}
-                </span>
-              </div>
-            </div>
-          </div>
+          )}
         </div>
 
-        {/* ── AI To-Do List ── */}
-        <section>
-          <div className="flex items-center justify-between mb-3">
-            <p className="section-title">AI-Generated To-Dos</p>
-            <span className="text-xs text-muted-foreground">{d?.todos?.length || 0} items</span>
+        {/* Agent Activity */}
+        <div className="flex flex-col rounded-lg p-4" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
+          <div className="mb-3 flex items-center justify-between">
+            <h3 style={{ fontSize: 13, fontWeight: 500 }}>Agent Activity</h3>
+            <div className="flex items-center gap-1.5">
+              <span className="rounded-full" style={{ width: 6, height: 6, background: d?.agent?.isRunning ? "var(--profit)" : "var(--muted-foreground)", boxShadow: d?.agent?.isRunning ? "0 0 5px var(--profit)" : "none", display: "inline-block" }} />
+              <span style={{ fontSize: 10, color: d?.agent?.isRunning ? "var(--profit)" : "var(--muted-foreground)", fontWeight: 500 }}>{d?.agent?.isRunning ? "LIVE" : "IDLE"}</span>
+            </div>
           </div>
-          <div className="space-y-2">
-            {(d?.todos || []).length === 0 ? (
-              <div className="stat-card flex items-center justify-center py-8 text-center">
-                <div>
-                  <CheckCircle className="mx-auto mb-2 h-8 w-8 text-accent/30" />
-                  <p className="text-sm text-muted-foreground">All caught up!</p>
-                </div>
-              </div>
+          <div className="flex flex-1 flex-col gap-2 overflow-y-auto" style={{ maxHeight: 200 }}>
+            {activity.length === 0 ? (
+              <p style={{ fontSize: 11, color: "var(--muted-foreground)" }}>No agent activity yet. Click Sync Now to run a research cycle.</p>
             ) : (
-              (d?.todos || []).map((todo) => (
-                <div
-                  key={todo.id}
-                  className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 transition-colors hover:border-accent/20"
-                >
-                  <div className={cn(
-                    "h-2 w-2 shrink-0 rounded-full",
-                    todo.priority === "high" ? "bg-red-400" :
-                    todo.priority === "medium" ? "bg-amber-400" : "bg-accent"
-                  )} />
-                  <p className="flex-1 text-sm text-foreground">{todo.text}</p>
-                  <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+              activity.map((entry, i) => (
+                <div key={i} className="flex items-start gap-2.5">
+                  <div className="mt-1 flex-shrink-0 rounded-full" style={{ width: 6, height: 6, background: entry.type === "success" ? "var(--profit)" : entry.type === "warning" ? "var(--warning)" : "var(--agent)" }} />
+                  <div>
+                    <p style={{ fontSize: 11, color: "var(--foreground)", lineHeight: 1.5 }}>{entry.event}</p>
+                    <p className="mono" style={{ fontSize: 10, color: "var(--muted-foreground)" }}>{entry.time}</p>
+                  </div>
                 </div>
               ))
             )}
           </div>
-        </section>
-
-        {/* ── Recent Reports ── */}
-        {(d?.recentReports || []).length > 0 && (
-          <section>
-            <div className="flex items-center justify-between mb-3">
-              <p className="section-title">Recent Reports</p>
-              <Link to="/reports" className="text-xs text-accent hover:underline">View all</Link>
-            </div>
-            <div className="grid grid-cols-4 gap-2">
-              {(d?.recentReports || []).slice(0, 4).map((report) => (
-                <Link
-                  key={report.id}
-                  to={`/reports/${report.id}`}
-                  className="stat-card flex flex-col gap-2 hover:border-accent/30"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">{report.date}</span>
-                    <span className={cn(
-                      "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-                      report.status === "completed" || report.status === "reviewed"
-                        ? "bg-accent/10 text-accent"
-                        : "bg-secondary text-muted-foreground"
-                    )}>
-                      {report.status}
-                    </span>
-                  </div>
-                  <p className="text-lg font-bold text-foreground">{report.totalProductsFound}</p>
-                  <p className="text-xs text-muted-foreground">products found</p>
-                </Link>
-              ))}
-            </div>
-          </section>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  sub,
-  icon: Icon,
-  positive,
-}: {
-  label: string;
-  value: string;
-  sub: string;
-  icon: React.ComponentType<{ className?: string }>;
-  positive: boolean;
-}) {
-  return (
-    <div className="stat-card flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <p className="section-title">{label}</p>
-        <div className={cn(
-          "flex h-7 w-7 items-center justify-center rounded-lg",
-          positive ? "bg-accent/10" : "bg-red-500/10"
-        )}>
-          <Icon className={cn("h-3.5 w-3.5", positive ? "text-accent" : "text-red-400")} />
         </div>
       </div>
-      <div>
-        <p className="text-2xl font-bold text-foreground">{value}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>
+
+      {/* Live Sales Feed + Agenda */}
+      <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 340px" }}>
+        {/* Feed */}
+        <div className="rounded-lg" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
+          <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
+            <h3 style={{ fontSize: 13, fontWeight: 500 }}>Live Sales Feed</h3>
+            <a href="/inventory" className="flex items-center gap-1" style={{ fontSize: 11, color: "var(--agent)" }}>View all <ChevronRight size={11} /></a>
+          </div>
+          {feedItems.length === 0 ? (
+            <div className="flex items-center justify-center px-4 py-10" style={{ fontSize: 12, color: "var(--muted-foreground)" }}>
+              No active listings yet — sync inventory or approve products from a report
+            </div>
+          ) : (
+            feedItems.map((item, i) => {
+              const sell = Number(item.currentSellPrice || 0);
+              const buy = Number(item.buyPrice || 0);
+              const margin = sell - buy;
+              const hasBuyBox = item.buyBoxPrice && sell <= Number(item.buyBoxPrice);
+              return (
+                <a
+                  key={item.id}
+                  href={item.asin ? asinToAmazonUrl(item.asin) : "#"}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-3 px-4 py-2.5"
+                  style={{ borderBottom: i < feedItems.length - 1 ? "1px solid var(--border)" : "none" }}
+                >
+                  <div className="flex flex-shrink-0 items-center justify-center rounded" style={{ width: 32, height: 32, background: "var(--accent)" }}>
+                    <Package size={14} style={{ color: "var(--muted-foreground)" }} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p style={{ fontSize: 12, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.title || item.asin}</p>
+                    <p className="mono" style={{ fontSize: 11, color: "var(--muted-foreground)" }}>{item.asin} · qty {item.quantityAtAmazon}</p>
+                  </div>
+                  <div className="flex-shrink-0 text-right">
+                    <p className="mono" style={{ fontSize: 12, fontWeight: 600, color: "var(--foreground)" }}>{formatCurrency(sell)}</p>
+                    <p className="mono" style={{ fontSize: 11, color: margin >= 0 ? "var(--profit)" : "var(--loss)" }}>{margin >= 0 ? "+" : ""}{formatCurrency(margin)}</p>
+                  </div>
+                  <span className="flex-shrink-0 rounded px-1.5 py-0.5" style={{ fontSize: 9, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase", background: hasBuyBox ? "var(--profit-muted)" : "var(--warning-muted)", color: hasBuyBox ? "var(--profit)" : "var(--warning)" }}>
+                    {hasBuyBox ? "buy box" : "watch"}
+                  </span>
+                </a>
+              );
+            })
+          )}
+        </div>
+
+        {/* Agenda */}
+        <div className="rounded-lg" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
+          <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
+            <h3 style={{ fontSize: 13, fontWeight: 500 }}>Today's Agenda</h3>
+            <span className="mono" style={{ fontSize: 11, color: "var(--muted-foreground)" }}>{checkedTodos.length}/{todos.length} done</span>
+          </div>
+          <div className="flex flex-col">
+            {todos.length === 0 ? (
+              <div className="flex items-center justify-center px-4 py-10" style={{ fontSize: 12, color: "var(--muted-foreground)" }}>All caught up</div>
+            ) : (
+              todos.map((todo, i) => {
+                const checked = checkedTodos.includes(todo.id);
+                return (
+                  <div
+                    key={todo.id}
+                    className="flex cursor-pointer items-start gap-3 px-4 py-2.5"
+                    style={{ borderBottom: i < todos.length - 1 ? "1px solid var(--border)" : "none" }}
+                    onClick={() => toggleTodo(todo.id)}
+                  >
+                    <div className="mt-0.5 flex flex-shrink-0 items-center justify-center rounded" style={{ width: 15, height: 15, border: checked ? "none" : "1px solid var(--border)", background: checked ? "var(--profit)" : "transparent" }}>
+                      {checked && <CheckCircle2 size={10} style={{ color: "#000" }} />}
+                    </div>
+                    <div>
+                      <p style={{ fontSize: 11.5, lineHeight: 1.5, textDecoration: checked ? "line-through" : "none", color: checked ? "var(--muted-foreground)" : "var(--foreground)" }}>{todo.task}</p>
+                      <span className="mt-1 inline-block rounded px-1.5 py-0.5" style={{ fontSize: 9, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase", background: todo.priority === "high" ? "var(--loss-muted)" : todo.priority === "medium" ? "var(--warning-muted)" : "var(--accent)", color: todo.priority === "high" ? "var(--loss)" : todo.priority === "medium" ? "var(--warning)" : "var(--muted-foreground)" }}>{todo.priority}</span>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Monthly Accounting Bar */}
+      <div className="rounded-lg p-4" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
+        <div className="mb-3 flex items-center gap-2">
+          <h3 style={{ fontSize: 13, fontWeight: 500 }}>This Month — Accounting</h3>
+          <span style={{ fontSize: 10, color: "var(--muted-foreground)", background: "var(--accent)", padding: "2px 6px", borderRadius: 4 }}>
+            {new Date().toLocaleDateString("en-US", { month: "long" })} MTD
+          </span>
+        </div>
+        <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
+          {[
+            { label: "Revenue", value: acct?.monthlyRevenue || 0, color: "var(--foreground)" },
+            { label: "COGS", value: acct?.cogs || 0, color: "var(--loss)" },
+            { label: "Amazon Fees", value: acct?.amazonFees || 0, color: "var(--loss)" },
+            { label: "Shipping", value: acct?.shipping || 0, color: "var(--loss)" },
+            { label: "Net Profit", value: acct?.monthlyProfit || 0, color: "var(--profit)" },
+          ].map((item) => (
+            <div key={item.label}>
+              <p style={{ fontSize: 10, color: "var(--muted-foreground)", letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 4 }}>{item.label}</p>
+              <p className="mono" style={{ fontSize: 18, fontWeight: 600, color: item.color }}>{formatCurrency(item.value)}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 overflow-hidden rounded" style={{ height: 5, background: "var(--accent)" }}>
+          <div style={{ height: "100%", width: `${Math.max(0, Math.min(100, acct?.profitMargin || 0))}%`, background: "var(--profit)", borderRadius: 4 }} />
+        </div>
+        <p style={{ fontSize: 10, color: "var(--muted-foreground)", marginTop: 4 }}>
+          {(acct?.profitMargin || 0).toFixed(1)}% net margin · {formatCurrency(acct?.monthlyProfit || 0)} profit on {formatCurrency(acct?.monthlyRevenue || 0)} revenue
+        </p>
       </div>
     </div>
   );

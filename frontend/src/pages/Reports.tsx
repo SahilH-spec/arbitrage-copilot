@@ -291,6 +291,29 @@ function ProductCard({
             </div>
           )}
 
+          {/* Suppliers + Coupons */}
+          {(product.supplierRecommendations?.length || product.discountNotes) && (
+            <div className="rounded-lg border border-border bg-secondary/40 px-4 py-3">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Where to buy</p>
+              <div className="flex flex-wrap gap-2">
+                {(product.supplierRecommendations || []).map((s) => (
+                  <a
+                    key={s.name}
+                    href={s.website || "#"}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-foreground hover:border-accent/40"
+                  >
+                    {s.name}
+                    {s.couponsAvailable && <span className="rounded px-1 text-[9px] font-semibold" style={{ background: "var(--profit-muted)", color: "var(--profit)" }}>COUPON</span>}
+                    {s.avgDiscount && <span className="text-[10px] text-muted-foreground">{s.avgDiscount}</span>}
+                  </a>
+                ))}
+              </div>
+              {product.discountNotes && <p className="mt-2 text-xs" style={{ color: "var(--profit)" }}>🏷 {product.discountNotes}</p>}
+            </div>
+          )}
+
           {/* Criteria */}
           {product.criteriaDetails && Object.keys(product.criteriaDetails).length > 0 && (
             <div>

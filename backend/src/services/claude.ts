@@ -99,17 +99,18 @@ PRODUCT:
 PRICE HISTORY (last 90 days):
 ${productData.priceHistory.map((p) => `${p.date}: $${p.price}`).join("\n")}
 
-Evaluate against these criteria and return JSON:
+Evaluate against these online-arbitrage criteria and return JSON:
 {
   "score": <0-100>,
   "criteriaDetails": {
-    "roi": { "pass": true/false, "reason": "...", "weight": 25 },
+    "roi": { "pass": true/false, "reason": "...", "weight": 20 },
+    "profitDollars": { "pass": true/false, "reason": "...", "weight": 10 },
     "salesVelocity": { "pass": true/false, "reason": "...", "weight": 20 },
     "competition": { "pass": true/false, "reason": "...", "weight": 15 },
-    "priceStability": { "pass": true/false, "reason": "...", "weight": 15 },
     "amazonPresence": { "pass": true/false, "reason": "...", "weight": 10 },
-    "categoryHealth": { "pass": true/false, "reason": "...", "weight": 10 },
-    "profitMargin": { "pass": true/false, "reason": "...", "weight": 5 }
+    "priceStability": { "pass": true/false, "reason": "...", "weight": 10 },
+    "profitMargin": { "pass": true/false, "reason": "...", "weight": 10 },
+    "reviewHealth": { "pass": true/false, "reason": "...", "weight": 5 }
   },
   "aiAnalysis": "2-3 sentence narrative",
   "estimatedProfit": <number>,
@@ -117,7 +118,15 @@ Evaluate against these criteria and return JSON:
 }
 
 ROI Formula: ((sellPrice - buyPrice - fees) / buyPrice) * 100
-Min acceptable: ROI >= 30%, Monthly sales >= 30, Competitors <= 5
+Pass thresholds:
+- roi: ROI >= 30%
+- profitDollars: net profit >= $3/unit
+- salesVelocity: BSR <= 100,000 AND est monthly sales >= 30
+- competition: <= 8 FBA sellers on the listing
+- amazonPresence: Amazon not in buy box (or < 30% of the time)
+- priceStability: 90-day average price not declining more than 20%
+- profitMargin: net margin >= 20%
+- reviewHealth: rating >= 4 stars (low return risk)
 
 Return ONLY valid JSON, no markdown.
 `;

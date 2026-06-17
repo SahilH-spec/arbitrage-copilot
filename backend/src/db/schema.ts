@@ -114,9 +114,30 @@ export const reportProducts = pgTable("report_products", {
   criteriaScore: integer("criteria_score"),
   criteriaDetails: jsonb("criteria_details"),
   aiAnalysis: text("ai_analysis"),
+  supplierRecommendations: jsonb("supplier_recommendations"),
+  coupons: jsonb("coupons"),
+  discountNotes: text("discount_notes"),
   status: varchar("status", { length: 50 }).default("pending"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ─── Suppliers ───────────────────────────────────────────────────────────────
+export const suppliers = pgTable("suppliers", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 200 }).notNull(),
+  type: varchar("type", { length: 50 }), // retail | online | wholesale | distributor
+  category: varchar("category", { length: 200 }),
+  website: text("website"),
+  region: varchar("region", { length: 100 }),
+  couponsAvailable: boolean("coupons_available").default(false),
+  avgDiscount: varchar("avg_discount", { length: 50 }),
+  rating: integer("rating"), // 1-5
+  tags: text("tags").array(),
+  notes: text("notes"),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // ─── Inventory Items ──────────────────────────────────────────────────────────
@@ -208,3 +229,5 @@ export type Transaction = typeof transactions.$inferSelect;
 export type NewTransaction = typeof transactions.$inferInsert;
 export type AgentRun = typeof agentRuns.$inferSelect;
 export type ChatMessage = typeof chatMessages.$inferSelect;
+export type Supplier = typeof suppliers.$inferSelect;
+export type NewSupplier = typeof suppliers.$inferInsert;

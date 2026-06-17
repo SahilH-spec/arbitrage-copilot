@@ -86,6 +86,16 @@ export const accountingApi = {
     request<{ message: string }>(`/accounting/transactions/${id}`, { method: "DELETE" }),
 };
 
+// ─── Suppliers ────────────────────────────────────────────────────────────────
+export const suppliersApi = {
+  list: () => request<Supplier[]>("/suppliers"),
+  add: (item: Partial<Supplier>) =>
+    request<Supplier>("/suppliers", { method: "POST", body: JSON.stringify(item) }),
+  update: (id: number, data: Partial<Supplier>) =>
+    request<Supplier>(`/suppliers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  remove: (id: number) => request<{ message: string }>(`/suppliers/${id}`, { method: "DELETE" }),
+};
+
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 export const chatApi = {
   getMessages: (sessionId = "default") =>
@@ -137,14 +147,35 @@ export const chatApi = {
 export interface DashboardData {
   sales: {
     today: { revenue: number; orders: number; units: number };
-    thisWeek: { revenue: number; orders: number; units: number };
-    thisMonth: { revenue: number; orders: number; units: number };
+    hourly: Array<{ time: string; revenue: number }>;
   };
   report: Report | null;
   recentReports: Report[];
-  inventory: { activeProducts: number; totalValue: number; lowStockAlerts: number };
-  accounting: { monthlyRevenue: number; monthlyExpenses: number; monthlyProfit: number; profitMargin: number };
-  agent: { isRunning: boolean; currentRunId: number | null; scheduler: SchedulerStatus; lastRun: AgentRun | null };
+  inventory: {
+    activeProducts: number;
+    totalValue: number;
+    lowStockAlerts: number;
+    totalAtAmazon: number;
+    buyBoxPct: number | null;
+  };
+  accounting: {
+    monthlyRevenue: number;
+    cogs: number;
+    amazonFees: number;
+    shipping: number;
+    otherExpenses: number;
+    monthlyProfit: number;
+    profitMargin: number;
+    profitToday: number;
+  };
+  agent: {
+    isRunning: boolean;
+    currentRunId: number | null;
+    scheduler: SchedulerStatus;
+    lastRun: AgentRun | null;
+    activity: Array<{ time: string; event: string; type: string }>;
+    update: string;
+  };
   todos: Todo[];
   integrations: Record<string, boolean>;
 }
@@ -184,9 +215,27 @@ export interface ReportProduct {
   criteriaScore: number | null;
   criteriaDetails: Record<string, { pass: boolean; reason: string; weight: number }> | null;
   aiAnalysis: string | null;
+  supplierRecommendations: Array<{ name: string; website: string | null; couponsAvailable: boolean; avgDiscount: string | null; type: string | null }> | null;
+  coupons: string[] | null;
+  discountNotes: string | null;
   status: string;
   notes: string | null;
   createdAt: string;
+}
+
+export interface Supplier {
+  id: number;
+  name: string;
+  type: string | null;
+  category: string | null;
+  website: string | null;
+  region: string | null;
+  couponsAvailable: boolean;
+  avgDiscount: string | null;
+  rating: number | null;
+  tags: string[] | null;
+  notes: string | null;
+  active: boolean;
 }
 
 export interface ReportWithProducts extends Report {
@@ -322,7 +371,7 @@ export interface ChatMessage {
 
 export interface Todo {
   id: number;
-  type: string;
-  text: string;
   priority: string;
+  task: string;
+  done: boolean;
 }

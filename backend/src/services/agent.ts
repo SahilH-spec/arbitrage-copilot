@@ -1,5 +1,5 @@
 import { db } from "../db/client";
-import { reports, reportProducts, agentRuns, agentSettings } from "../db/schema";
+import { reports, reportProducts, agentRuns, agentSettings, suppliers } from "../db/schema";
 import { runAgentResearch, analyzeProduct, generateReportSummary } from "./claude";
 import { braveSearch, researchTrendingProducts } from "./search";
 import { getProductMetrics } from "./keepa";
@@ -208,10 +208,33 @@ Format as JSON array:
       reportId = newReport.id;
     }
 
+    // Load suppliers once for recommendations
+    const allSuppliers = await db.select().from(suppliers).where(eq(suppliers.active, true));
+    const recommendSuppliers = (category: string) => {
+      const cat = (category || "").toLowerCase();
+      const matched = allSuppliers
+        .filter((s) =>
+          s.category && (cat.includes(s.category.toLowerCase().split(" ")[0]) ||
+          s.category.toLowerCase().includes(cat.split(" ")[0]) ||
+          s.type === "wholesale")
+        )
+        .slice(0, 4);
+      const pool = matched.length >= 2 ? matched : allSuppliers.slice(0, 4);
+      return pool.map((s) => ({
+        name: s.name,
+        website: s.website,
+        couponsAvailable: s.couponsAvailable,
+        avgDiscount: s.avgDiscount,
+        type: s.type,
+      }));
+    };
+
     // Insert report products
     for (const p of qualifiedProducts) {
       const m = p.metrics;
       const a = p.analysis;
+      const supplierRecs = recommendSuppliers(p.candidate.category);
+      const couponSuppliers = supplierRecs.filter((s) => s.couponsAvailable).map((s) => s.name);
       await db.insert(reportProducts).values({
         reportId,
         asin: p.candidate.asin,
@@ -232,6 +255,11 @@ Format as JSON array:
         criteriaScore: a.score,
         criteriaDetails: a.criteriaDetails,
         aiAnalysis: a.aiAnalysis,
+        supplierRecommendations: supplierRecs,
+        coupons: couponSuppliers.length ? couponSuppliers : null,
+        discountNotes: couponSuppliers.length
+          ? `Coupons/discounts often available at: ${couponSuppliers.join(", ")}`
+          : null,
         status: "pending",
       });
     }

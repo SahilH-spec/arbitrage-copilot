@@ -2,103 +2,181 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  :root {
-    --background: 0 0% 4%;
-    --foreground: 0 0% 98%;
-    --card: 0 0% 7%;
-    --card-foreground: 0 0% 95%;
-    --popover: 0 0% 7%;
-    --popover-foreground: 0 0% 95%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 4%;
-    --secondary: 0 0% 12%;
-    --secondary-foreground: 0 0% 90%;
-    --muted: 0 0% 12%;
-    --muted-foreground: 0 0% 55%;
-    --accent: 160 84% 39%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 16%;
-    --input: 0 0% 12%;
-    --ring: 160 84% 39%;
-    --radius: 0.5rem;
-  }
+/* ============================================================
+   Arbitrage Copilot — design tokens (ported from Figma)
+   Light-first with a persistent dark sidebar.
+   ============================================================ */
+:root {
+  --font-size: 14px;
+  --background: #f8f8f8;
+  --foreground: #111111;
+  --card: #ffffff;
+  --card-foreground: #111111;
+  --popover: #ffffff;
+  --popover-foreground: #111111;
+  --primary: #111111;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f0f0;
+  --secondary-foreground: #111111;
+  --muted: #f2f2f2;
+  --muted-foreground: #666666;
+  --accent: #f0f0f0;
+  --accent-foreground: #111111;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: rgba(0, 0, 0, 0.08);
+  --input: #f0f0f0;
+  --input-background: #f5f5f5;
+  --switch-background: #cccccc;
+  --ring: rgba(0, 0, 0, 0.2);
+  --radius: 0.5rem;
+
+  --chart-1: #16a34a;
+  --chart-2: #2563eb;
+  --chart-3: #d97706;
+  --chart-4: #dc2626;
+  --chart-5: #7c3aed;
+
+  /* dark sidebar (constant across themes) */
+  --sidebar: #111111;
+  --sidebar-foreground: #aaaaaa;
+  --sidebar-primary: #ffffff;
+  --sidebar-primary-foreground: #111111;
+  --sidebar-accent: #1e1e1e;
+  --sidebar-accent-foreground: #f0f0f0;
+  --sidebar-border: rgba(255, 255, 255, 0.06);
+
+  /* semantic tokens */
+  --profit: #16a34a;
+  --profit-muted: rgba(22, 163, 74, 0.1);
+  --warning: #d97706;
+  --warning-muted: rgba(217, 119, 6, 0.1);
+  --agent: #2563eb;
+  --agent-muted: rgba(37, 99, 235, 0.1);
+  --loss: #dc2626;
+  --loss-muted: rgba(220, 38, 38, 0.1);
+}
+
+.dark {
+  --background: #0b0b0b;
+  --foreground: #f0f0f0;
+  --card: #141414;
+  --card-foreground: #f0f0f0;
+  --popover: #1a1a1a;
+  --popover-foreground: #f0f0f0;
+  --primary: #ffffff;
+  --primary-foreground: #0b0b0b;
+  --secondary: #1f1f1f;
+  --secondary-foreground: #d4d4d4;
+  --muted: #1a1a1a;
+  --muted-foreground: #888888;
+  --accent: #242424;
+  --accent-foreground: #f0f0f0;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: rgba(255, 255, 255, 0.07);
+  --input: #1f1f1f;
+  --input-background: #1f1f1f;
+  --switch-background: #333333;
+  --ring: rgba(255, 255, 255, 0.25);
+
+  --chart-1: #4ade80;
+  --chart-2: #60a5fa;
+  --chart-3: #fbbf24;
+  --chart-4: #f87171;
+  --chart-5: #a78bfa;
+
+  --sidebar: #080808;
+  --sidebar-foreground: #d4d4d4;
+  --sidebar-primary: #ffffff;
+  --sidebar-primary-foreground: #080808;
+  --sidebar-accent: #1a1a1a;
+  --sidebar-accent-foreground: #f0f0f0;
+  --sidebar-border: rgba(255, 255, 255, 0.06);
+
+  --profit: #4ade80;
+  --profit-muted: rgba(74, 222, 128, 0.12);
+  --warning: #fbbf24;
+  --warning-muted: rgba(251, 191, 36, 0.12);
+  --agent: #60a5fa;
+  --agent-muted: rgba(96, 165, 250, 0.12);
+  --loss: #f87171;
+  --loss-muted: rgba(248, 113, 113, 0.12);
 }
 
 @layer base {
   * {
-    @apply border-border;
+    border-color: var(--border);
+  }
+
+  html {
+    font-size: var(--font-size);
   }
 
   body {
-    @apply bg-background text-foreground font-sans antialiased;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
 
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
-
   ::-webkit-scrollbar-track {
-    background: hsl(var(--background));
+    background: transparent;
   }
-
   ::-webkit-scrollbar-thumb {
-    background: hsl(var(--border));
-    border-radius: 3px;
+    background: var(--border);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
   }
 
-  ::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground));
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
   }
 }
 
 @layer components {
-  .stat-card {
-    @apply rounded-xl border border-border bg-card p-5 transition-all hover:border-accent/30;
+  .card-surface {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
   }
 
   .section-title {
-    @apply text-xs font-semibold uppercase tracking-widest text-muted-foreground;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
   }
 
-  .profit-text {
-    @apply text-emerald-400 font-semibold;
-  }
-
-  .loss-text {
-    @apply text-red-400 font-semibold;
-  }
-
-  .warning-text {
-    @apply text-amber-400 font-semibold;
-  }
-
-  .badge-score {
-    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  .mono {
+    font-family: "JetBrains Mono", "Fira Code", monospace;
   }
 
   .nav-item {
-    @apply flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    border-radius: 6px;
+    padding: 9px 10px;
+    font-size: 13px;
+    color: var(--sidebar-foreground);
+    transition: all 150ms;
+    position: relative;
   }
-
+  .nav-item:hover {
+    background: var(--sidebar-accent);
+    color: var(--sidebar-accent-foreground);
+  }
   .nav-item.active {
-    @apply bg-secondary text-foreground;
-  }
-
-  .glow-accent {
-    box-shadow: 0 0 20px rgba(16, 185, 129, 0.15);
-  }
-
-  .agent-pulse {
-    animation: agent-pulse 2s ease-in-out infinite;
-  }
-
-  @keyframes agent-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
+    background: var(--sidebar-accent);
+    color: var(--sidebar-primary);
   }
 }

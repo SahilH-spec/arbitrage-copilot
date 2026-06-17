@@ -125,7 +125,69 @@ export async function runMigrations() {
         content TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT NOW()
       );
+
+      CREATE TABLE IF NOT EXISTS suppliers (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(200) NOT NULL,
+        type VARCHAR(50),
+        category VARCHAR(200),
+        website TEXT,
+        region VARCHAR(100),
+        coupons_available BOOLEAN DEFAULT FALSE,
+        avg_discount VARCHAR(50),
+        rating INTEGER,
+        tags TEXT[],
+        notes TEXT,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+
+      ALTER TABLE report_products ADD COLUMN IF NOT EXISTS supplier_recommendations JSONB;
+      ALTER TABLE report_products ADD COLUMN IF NOT EXISTS coupons JSONB;
+      ALTER TABLE report_products ADD COLUMN IF NOT EXISTS discount_notes TEXT;
     `);
+
+    // Seed ideal online-arbitrage suppliers (only if table is empty)
+    const supplierCount = await client.query(`SELECT COUNT(*)::int AS c FROM suppliers`);
+    if (supplierCount.rows[0].c === 0) {
+      await client.query(`
+        INSERT INTO suppliers (name, type, category, website, region, coupons_available, avg_discount, rating, tags) VALUES
+        ('Walmart', 'retail', 'General Merchandise', 'https://www.walmart.com', 'US', true, '10-40%', 5, ARRAY['clearance','rollback','online','in-store']),
+        ('Target', 'retail', 'General Merchandise', 'https://www.target.com', 'US', true, '15-50%', 5, ARRAY['clearance','circle','cartwheel','in-store']),
+        ('Home Depot', 'retail', 'Home Improvement', 'https://www.homedepot.com', 'US', true, '10-50%', 4, ARRAY['clearance','penny-deals','seasonal']),
+        ('Lowe''s', 'retail', 'Home Improvement', 'https://www.lowes.com', 'US', true, '10-50%', 4, ARRAY['clearance','seasonal']),
+        ('Best Buy', 'retail', 'Electronics', 'https://www.bestbuy.com', 'US', true, '10-40%', 4, ARRAY['open-box','clearance','deal-of-day']),
+        ('Walgreens', 'retail', 'Health & Beauty', 'https://www.walgreens.com', 'US', true, '20-75%', 4, ARRAY['clearance','rewards','coupons']),
+        ('CVS', 'retail', 'Health & Beauty', 'https://www.cvs.com', 'US', true, '20-75%', 4, ARRAY['clearance','extracare','coupons']),
+        ('Costco', 'wholesale', 'Warehouse Club', 'https://www.costco.com', 'US', true, '10-30%', 5, ARRAY['bulk','members-only','treasure-hunt']),
+        ('Sam''s Club', 'wholesale', 'Warehouse Club', 'https://www.samsclub.com', 'US', true, '10-30%', 4, ARRAY['bulk','members-only','instant-savings']),
+        ('BJ''s Wholesale', 'wholesale', 'Warehouse Club', 'https://www.bjs.com', 'US', true, '10-30%', 4, ARRAY['bulk','members-only','coupons']),
+        ('Kohl''s', 'retail', 'Apparel & Home', 'https://www.kohls.com', 'US', true, '20-70%', 4, ARRAY['kohls-cash','clearance','coupons']),
+        ('Big Lots', 'retail', 'Closeout', 'https://www.biglots.com', 'US', true, '20-60%', 3, ARRAY['closeout','clearance']),
+        ('Dollar General', 'retail', 'Discount', 'https://www.dollargeneral.com', 'US', true, '10-50%', 3, ARRAY['penny-deals','clearance']),
+        ('Staples', 'retail', 'Office Supplies', 'https://www.staples.com', 'US', true, '10-50%', 4, ARRAY['clearance','rewards','coupons']),
+        ('Office Depot', 'retail', 'Office Supplies', 'https://www.officedepot.com', 'US', true, '10-50%', 3, ARRAY['clearance','rewards']),
+        ('Wayfair', 'online', 'Home & Furniture', 'https://www.wayfair.com', 'US', true, '10-40%', 3, ARRAY['open-box','clearance']),
+        ('Chewy', 'online', 'Pet Supplies', 'https://www.chewy.com', 'US', true, '5-30%', 4, ARRAY['autoship','coupons']),
+        ('GNC', 'retail', 'Health & Supplements', 'https://www.gnc.com', 'US', true, '20-50%', 3, ARRAY['clearance','rewards']),
+        ('Ulta Beauty', 'retail', 'Beauty', 'https://www.ulta.com', 'US', true, '20-50%', 4, ARRAY['clearance','rewards','coupons']),
+        ('Sephora', 'retail', 'Beauty', 'https://www.sephora.com', 'US', false, '10-30%', 3, ARRAY['sale','rewards']),
+        ('Bath & Body Works', 'retail', 'Beauty & Home', 'https://www.bathandbodyworks.com', 'US', true, '25-75%', 4, ARRAY['semi-annual-sale','coupons']),
+        ('Macy''s', 'retail', 'Apparel & Home', 'https://www.macys.com', 'US', true, '20-70%', 3, ARRAY['clearance','coupons']),
+        ('Academy Sports', 'retail', 'Sporting Goods', 'https://www.academy.com', 'US', true, '15-50%', 4, ARRAY['clearance','seasonal']),
+        ('Dick''s Sporting Goods', 'retail', 'Sporting Goods', 'https://www.dickssportinggoods.com', 'US', true, '15-50%', 3, ARRAY['clearance','scorecard']),
+        ('Tractor Supply', 'retail', 'Farm & Ranch', 'https://www.tractorsupply.com', 'US', true, '15-50%', 4, ARRAY['clearance','seasonal']),
+        ('Michaels', 'retail', 'Arts & Crafts', 'https://www.michaels.com', 'US', true, '30-70%', 3, ARRAY['clearance','coupons']),
+        ('Newegg', 'online', 'Electronics', 'https://www.newegg.com', 'US', true, '5-30%', 4, ARRAY['shell-shocker','combo-deals']),
+        ('B&H Photo', 'online', 'Electronics & Photo', 'https://www.bhphotovideo.com', 'US', false, '5-25%', 4, ARRAY['deal-zone','price-drops']),
+        ('Vitacost', 'online', 'Health & Supplements', 'https://www.vitacost.com', 'US', true, '20-50%', 4, ARRAY['coupons','bulk']),
+        ('PetSmart', 'retail', 'Pet Supplies', 'https://www.petsmart.com', 'US', true, '15-50%', 3, ARRAY['clearance','rewards']),
+        ('Faire', 'wholesale', 'Wholesale Marketplace', 'https://www.faire.com', 'US', false, 'wholesale', 4, ARRAY['B2B','net-60','wholesale']),
+        ('Alibaba', 'distributor', 'Global Wholesale', 'https://www.alibaba.com', 'Global', false, 'wholesale', 3, ARRAY['B2B','bulk','private-label']);
+      `);
+      console.log("[DB] Seeded suppliers");
+    }
 
     // Seed default agent settings
     await client.query(`
@@ -134,7 +196,14 @@ export async function runMigrations() {
         ('enabled', 'true'),
         ('maxProducts', '20'),
         ('minRoi', '30'),
+        ('minProfitDollars', '3'),
+        ('minProfitMargin', '20'),
         ('minMonthlySales', '30'),
+        ('maxBsr', '100000'),
+        ('maxFbaSellers', '8'),
+        ('maxAmazonBuyBoxPct', '30'),
+        ('maxPriceDrop90d', '20'),
+        ('minRating', '4'),
         ('minScore', '60'),
         ('categories', '["Electronics","Home & Kitchen","Sports & Outdoors","Toys & Games","Health & Beauty","Office Products"]'),
         ('excludeCategories', '["Grocery","Automotive","Industrial"]'),
