@@ -191,26 +191,26 @@ export async function findProducts(opts: FinderOptions = {}): Promise<string[]> 
     limit = 30,
   } = opts;
 
+  // NOTE: Keepa Product Finder requires perPage === 50 (other values 400).
+  // We always request 50 and slice down to `limit` client-side.
   const selection: Record<string, unknown> = {
     current_SALES_gte: 1,
     current_SALES_lte: maxBsr,
     current_NEW_gte: minPriceCents,
     current_NEW_lte: maxPriceCents,
     sort: [["current_SALES", "asc"]],
-    perPage: Math.min(limit, 50),
+    perPage: 50,
     page: 0,
-    productType: [0, 1],
   };
-  if (categoryId) selection.rootCategory = categoryId;
-
-  const params = new URLSearchParams({
-    key: config.keepa.apiKey,
-    domain: "1",
-    selection: JSON.stringify(selection),
-  });
+  if (categoryId) selection.categories_include = [categoryId];
 
   try {
-    const response = await fetch(`${BASE_URL}/query?${params}`);
+    // Product Finder is a POST endpoint with the selection JSON as the body.
+    const response = await fetch(`${BASE_URL}/query?key=${config.keepa.apiKey}&domain=1`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(selection),
+    });
     if (!response.ok) {
       console.error(`[Keepa] Product finder failed: ${response.status}`);
       return [];
