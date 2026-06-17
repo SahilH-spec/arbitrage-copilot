@@ -34,6 +34,12 @@ export const config = {
     apiKey: process.env.BRAVE_SEARCH_API_KEY || "",
   },
 
+  plaid: {
+    clientId: process.env.PLAID_CLIENT_ID || "",
+    secret: process.env.PLAID_SECRET || "",
+    env: process.env.PLAID_ENV || "sandbox", // sandbox | development | production
+  },
+
   email: {
     host: process.env.SMTP_HOST || "",
     port: parseInt(process.env.SMTP_PORT || "587"),
@@ -61,5 +67,6 @@ export const isConfigured = {
   amazon: !!config.amazon.appId && !!config.amazon.refreshToken,
   keepa: !!config.keepa.apiKey,
   brave: !!config.brave.apiKey,
+  plaid: !!config.plaid.clientId && !!config.plaid.secret,
   email: !!config.email.user && !!config.email.pass,
 };

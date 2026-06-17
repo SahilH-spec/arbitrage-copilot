@@ -96,6 +96,29 @@ export const suppliersApi = {
   remove: (id: number) => request<{ message: string }>(`/suppliers/${id}`, { method: "DELETE" }),
 };
 
+// ─── Bank (Plaid) ─────────────────────────────────────────────────────────────
+export const bankApi = {
+  getStatus: () => request<{ configured: boolean; connected: boolean }>("/bank/status"),
+  createLinkToken: () => request<{ linkToken: string }>("/bank/link-token", { method: "POST" }),
+  exchange: (publicToken: string) =>
+    request<{ message: string }>("/bank/exchange", { method: "POST", body: JSON.stringify({ publicToken }) }),
+  getAccounts: () => request<{ accounts: BankAccount[] }>("/bank/accounts"),
+  sync: () => request<{ message: string; added: number }>("/bank/sync", { method: "POST" }),
+  disconnect: () => request<{ message: string }>("/bank/disconnect", { method: "POST" }),
+};
+
+export interface BankAccount {
+  id: string;
+  name: string;
+  officialName: string | null;
+  mask: string | null;
+  type: string;
+  subtype: string | null;
+  available: number | null;
+  current: number | null;
+  currency: string | null;
+}
+
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 export const chatApi = {
   getMessages: (sessionId = "default") =>

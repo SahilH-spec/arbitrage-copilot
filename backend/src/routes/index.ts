@@ -6,6 +6,7 @@ import inventoryRouter from "./inventory";
 import accountingRouter from "./accounting";
 import chatRouter from "./chat";
 import suppliersRouter from "./suppliers";
+import bankRouter from "./bank";
 import { isConfigured } from "../config";
 
 const router = Router();
@@ -25,5 +26,6 @@ router.use("/inventory", inventoryRouter);
 router.use("/accounting", accountingRouter);
 router.use("/chat", chatRouter);
 router.use("/suppliers", suppliersRouter);
+router.use("/bank", bankRouter);
 
 export default router;
