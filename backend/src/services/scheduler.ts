@@ -1,8 +1,10 @@
 import cron from "node-cron";
 import { runAgentCycle } from "./agent";
+import { runManagedAgentSession, RESEARCH_KICKOFF } from "./managed-agent";
 import { db } from "../db/client";
 import { agentSettings } from "../db/schema";
 import { eq } from "drizzle-orm";
+import { isConfigured } from "../config";
 
 let scheduledTask: cron.ScheduledTask | null = null;
 let currentSchedule = "0 4 * * *"; // Default: 4 AM daily
@@ -37,7 +39,11 @@ export function startScheduler(schedule: string) {
   scheduledTask = cron.schedule(schedule, async () => {
     console.log("[Scheduler] Triggered agent cycle");
     try {
-      await runAgentCycle(false);
+      if (isConfigured.managedAgent) {
+        await runManagedAgentSession(RESEARCH_KICKOFF);
+      } else {
+        await runAgentCycle(false);
+      }
     } catch (err) {
       console.error("[Scheduler] Agent cycle failed:", err);
     }

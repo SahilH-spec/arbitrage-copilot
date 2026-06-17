@@ -7,6 +7,8 @@ interface KeepaProduct {
   asin: string;
   title: string;
   brand: string;
+  upcList?: string[];
+  eanList?: string[];
   categories: number[];
   salesRankReference: number;
   salesRankReferenceName: string;
@@ -74,6 +76,8 @@ export interface ProductMetrics {
   asin: string;
   title: string;
   brand: string;
+  upc: string;
+  ean: string;
   currentAmazonPrice: number;
   buyBoxPrice: number;
   bsrRank: number;
@@ -140,6 +144,8 @@ export async function getProductMetrics(asin: string): Promise<ProductMetrics | 
     asin: product.asin,
     title: product.title || "Unknown product",
     brand: product.brand || "",
+    upc: product.upcList?.[0] || "",
+    ean: product.eanList?.[0] || "",
     currentAmazonPrice: amazonPrice,
     buyBoxPrice,
     bsrRank: bsr,

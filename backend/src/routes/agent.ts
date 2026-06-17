@@ -3,34 +3,48 @@ import { db } from "../db/client";
 import { agentSettings, agentRuns } from "../db/schema";
 import { eq, desc } from "drizzle-orm";
 import { runAgentCycle, getAgentStatus, getAgentConfig } from "../services/agent";
+import { runManagedAgentSession, getManagedAgentStatus, RESEARCH_KICKOFF, MONITOR_KICKOFF } from "../services/managed-agent";
 import { updateSchedule, getSchedulerStatus } from "../services/scheduler";
+import { isConfigured } from "../config";
 
 const router = Router();
 
 // GET /api/agent/status
 router.get("/status", async (req, res) => {
   try {
-    const status = getAgentStatus();
+    const managed = getManagedAgentStatus();
+    const inApp = getAgentStatus();
     const scheduler = getSchedulerStatus();
     const agentConfig = await getAgentConfig();
-    res.json({ ...status, scheduler, config: agentConfig });
+    res.json({
+      isRunning: managed.isRunning || inApp.isRunning,
+      currentRunId: inApp.currentRunId,
+      mode: isConfigured.managedAgent ? "managed" : "in-app",
+      managed,
+      scheduler,
+      config: agentConfig,
+    });
   } catch (err) {
     res.status(500).json({ error: "Failed to get agent status" });
   }
 });
 
-// POST /api/agent/run — trigger manual run
+// POST /api/agent/run — trigger manual run (managed agent if configured, else in-app)
 router.post("/run", async (req, res) => {
   try {
-    const status = getAgentStatus();
-    if (status.isRunning) {
+    const mode = (req.body?.mode as string) || "research";
+    if (getManagedAgentStatus().isRunning || getAgentStatus().isRunning) {
       return res.status(409).json({ error: "Agent is already running" });
     }
 
-    // Start async — don't await
-    runAgentCycle(true).catch((err) => console.error("[Agent] Manual run failed:", err));
-
-    res.json({ message: "Agent cycle started", status: "running" });
+    if (isConfigured.managedAgent) {
+      const kickoff = mode === "monitor" ? MONITOR_KICKOFF : RESEARCH_KICKOFF;
+      runManagedAgentSession(kickoff).catch((err) => console.error("[ManagedAgent] run failed:", err));
+      res.json({ message: "Managed agent session started", status: "running", mode: "managed" });
+    } else {
+      runAgentCycle(true).catch((err) => console.error("[Agent] run failed:", err));
+      res.json({ message: "Agent cycle started", status: "running", mode: "in-app" });
+    }
   } catch (err) {
     res.status(500).json({ error: "Failed to start agent" });
   }

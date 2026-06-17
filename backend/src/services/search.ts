@@ -95,3 +95,42 @@ export async function researchProductNews(asin: string, title: string): Promise<
 export async function researchCompetitor(productTitle: string): Promise<SearchResult[]> {
   return braveSearch(`"${productTitle}" amazon competitors sellers analysis`, 5);
 }
+
+const RETAILER_DOMAINS = [
+  "walmart.com", "target.com", "homedepot.com", "lowes.com", "bestbuy.com",
+  "walgreens.com", "cvs.com", "costco.com", "samsclub.com", "bjs.com",
+  "kohls.com", "staples.com", "officedepot.com", "chewy.com", "gnc.com",
+  "ulta.com", "wayfair.com", "academy.com", "dickssportinggoods.com",
+];
+
+// Find candidate retailer pages for a product (sourcing). UPC gives the most exact match.
+export async function findRetailSources(
+  title: string,
+  brand?: string,
+  upc?: string
+): Promise<SearchResult[]> {
+  const results: SearchResult[] = [];
+  const seen = new Set<string>();
+
+  const queries: string[] = [];
+  if (upc) queries.push(`${upc} ${brand || ""} buy`);
+  queries.push(`${brand ? brand + " " : ""}${title} buy price`);
+  queries.push(`${brand ? brand + " " : ""}${title} ${RETAILER_DOMAINS.slice(0, 4).map((d) => "site:" + d).join(" OR ")}`);
+
+  for (const q of queries) {
+    const r = await braveSearch(q, 6);
+    for (const item of r) {
+      const isRetailer = RETAILER_DOMAINS.some((d) => item.url.includes(d));
+      if (isRetailer && !seen.has(item.url)) {
+        seen.add(item.url);
+        results.push(item);
+      }
+    }
+  }
+  // If nothing matched a known retailer, return the best general results
+  if (results.length === 0) {
+    const general = await braveSearch(`${brand ? brand + " " : ""}${title} buy online price`, 6);
+    return general.slice(0, 6);
+  }
+  return results.slice(0, 10);
+}

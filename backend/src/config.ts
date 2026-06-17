@@ -14,6 +14,8 @@ export const config = {
 
   anthropic: {
     apiKey: process.env.ANTHROPIC_API_KEY || "",
+    managedAgentId: process.env.MANAGED_AGENT_ID || "",
+    managedEnvId: process.env.MANAGED_ENV_ID || "",
   },
 
   amazon: {
@@ -55,6 +57,7 @@ export const config = {
 
 export const isConfigured = {
   anthropic: !!config.anthropic.apiKey,
+  managedAgent: !!config.anthropic.managedAgentId && !!config.anthropic.managedEnvId,
   amazon: !!config.amazon.appId && !!config.amazon.refreshToken,
   keepa: !!config.keepa.apiKey,
   brave: !!config.brave.apiKey,
