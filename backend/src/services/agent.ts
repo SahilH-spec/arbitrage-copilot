@@ -100,6 +100,7 @@ export async function runAgentCycle(manual = false): Promise<number | null> {
         minPriceCents: 1200,
         maxPriceCents: 8000,
         categoryId: catId,
+        maxSellers: 12,
         limit: perCat,
       }).catch(() => [] as string[]);
       found.forEach((a) => asinSet.add(a));
@@ -187,17 +188,23 @@ export async function runAgentCycle(manual = false): Promise<number | null> {
 
     // ── Phase 3: Filter & Rank ─────────────────────────────────────────────────
     log("Phase 3: Filtering and ranking products...");
-    const qualifiedProducts = analyzedProducts
-      .filter((p) => {
-        const roi = p.analysis.estimatedRoi;
-        const score = p.analysis.score;
-        const monthlySales = p.metrics?.monthlySalesEst || 0;
-        return roi >= agentConfig.minRoi && score >= agentConfig.minScore && monthlySales >= agentConfig.minMonthlySales;
-      })
-      .sort((a, b) => b.analysis.score - a.analysis.score)
-      .slice(0, agentConfig.maxProducts);
+    const meetsThreshold = (p: (typeof analyzedProducts)[number]) => {
+      const roi = p.analysis.estimatedRoi;
+      const score = p.analysis.score;
+      const monthlySales = p.metrics?.monthlySalesEst || 0;
+      return roi >= agentConfig.minRoi && score >= agentConfig.minScore && monthlySales >= agentConfig.minMonthlySales;
+    };
 
-    log(`${qualifiedProducts.length} products passed quality filters`);
+    const ranked = [...analyzedProducts].sort((a, b) => b.analysis.score - a.analysis.score);
+    const fullyQualified = ranked.filter(meetsThreshold);
+
+    // Surface the fully-qualified leads; if too few clear every threshold,
+    // fill the report with the highest-scoring candidates as a watchlist so the
+    // user always sees real, ranked products to review (sourcing is an estimate).
+    const qualifiedProducts = (fullyQualified.length >= 5 ? fullyQualified : ranked).slice(0, agentConfig.maxProducts);
+    const qualifiedAsins = new Set(fullyQualified.map((p) => p.candidate.asin));
+
+    log(`${fullyQualified.length} fully qualified; surfacing ${qualifiedProducts.length} top candidates for review`);
 
     // ── Phase 4: Create Report ────────────────────────────────────────────────
     log("Phase 4: Creating daily report...");
@@ -251,6 +258,9 @@ export async function runAgentCycle(manual = false): Promise<number | null> {
         discountNotes: couponSuppliers.length
           ? `Coupons/discounts often available at: ${couponSuppliers.join(", ")}`
           : null,
+        notes: qualifiedAsins.has(p.candidate.asin)
+          ? "✓ Meets all profitability criteria"
+          : "Watchlist — sourcing price is an AI estimate; verify the actual source cost before buying",
         status: "pending",
       });
     }

@@ -173,7 +173,8 @@ export interface FinderOptions {
   maxBsr?: number;        // sales rank ceiling (lower = sells faster)
   minPriceCents?: number; // min current NEW price in cents
   maxPriceCents?: number; // max current NEW price in cents
-  categoryId?: number;    // Keepa rootCategory id (optional)
+  categoryId?: number;    // Keepa category id (optional)
+  maxSellers?: number;    // max number of NEW offers (low competition)
   limit?: number;         // how many ASINs to return
 }
 
@@ -188,6 +189,7 @@ export async function findProducts(opts: FinderOptions = {}): Promise<string[]> 
     minPriceCents = 1200,   // $12
     maxPriceCents = 8000,   // $80
     categoryId,
+    maxSellers = 12,
     limit = 30,
   } = opts;
 
@@ -198,6 +200,8 @@ export async function findProducts(opts: FinderOptions = {}): Promise<string[]> 
     current_SALES_lte: maxBsr,
     current_NEW_gte: minPriceCents,
     current_NEW_lte: maxPriceCents,
+    current_COUNT_NEW_gte: 2,
+    current_COUNT_NEW_lte: maxSellers,
     sort: [["current_SALES", "asc"]],
     perPage: 50,
     page: 0,
