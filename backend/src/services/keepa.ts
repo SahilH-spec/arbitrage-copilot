@@ -56,7 +56,7 @@ export async function getKeepaProduct(asin: string): Promise<KeepaProduct | null
     domain: "1", // US
     asin,
     stats: "90",
-    offers: "20",
+    buybox: "1",
     history: "1",
   });
 
@@ -88,56 +88,67 @@ export interface ProductMetrics {
   priceDropPercent: number;
 }
 
+// Keepa CSV / stats array indices
+const CSV = { AMAZON: 0, NEW: 1, SALES: 3, COUNT_NEW: 11, RATING: 16, BUY_BOX: 18 };
+
 export async function getProductMetrics(asin: string): Promise<ProductMetrics | null> {
   const product = await getKeepaProduct(asin);
   if (!product) return null;
 
-  // Parse price history from csv[1] (Amazon price) or csv[0] (new price)
+  const stats = (product.stats || {}) as { current?: number[]; avg30?: number[]; avg90?: number[] };
+  const cur = stats.current || [];
+  const avg30arr = stats.avg30 || [];
+  const avg90arr = stats.avg90 || [];
+
+  const pick = (arr: number[], ...idxs: number[]) => {
+    for (const i of idxs) {
+      if (arr[i] != null && arr[i] > 0) return arr[i];
+    }
+    return -1;
+  };
+
+  // Prices (cents → USD). Prefer buy box, fall back to NEW then AMAZON.
+  const buyBoxCents = pick(cur, CSV.BUY_BOX, CSV.NEW, CSV.AMAZON);
+  const amazonCents = pick(cur, CSV.AMAZON, CSV.BUY_BOX, CSV.NEW);
+  const buyBoxPrice = keepaPriceToUSD(buyBoxCents);
+  const amazonPrice = keepaPriceToUSD(amazonCents);
+
+  const avg30 = keepaPriceToUSD(pick(avg30arr, CSV.BUY_BOX, CSV.NEW, CSV.AMAZON));
+  const avg90 = keepaPriceToUSD(pick(avg90arr, CSV.BUY_BOX, CSV.NEW, CSV.AMAZON));
+  const priceDropPercent = avg90 > 0 && buyBoxPrice > 0 ? ((avg90 - buyBoxPrice) / avg90) * 100 : 0;
+
+  // Price history (buy box, else NEW)
   const priceHistory90d: Array<{ date: string; price: number }> = [];
-  const rawPrices = product.csv?.[1] || product.csv?.[0] || [];
-  for (let i = 0; i < rawPrices.length - 1; i += 2) {
-    const keepaTime = rawPrices[i];
-    const price = rawPrices[i + 1];
+  const histRow = product.csv?.[CSV.BUY_BOX] || product.csv?.[CSV.NEW] || product.csv?.[CSV.AMAZON] || [];
+  const now = Date.now();
+  for (let i = 0; i < histRow.length - 1; i += 2) {
+    const price = histRow[i + 1];
     if (price > 0) {
-      const date = keepaTimeToDate(keepaTime);
-      const now = new Date();
-      const daysAgo = (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24);
-      if (daysAgo <= 90) {
-        priceHistory90d.push({
-          date: date.toISOString().split("T")[0],
-          price: keepaPriceToUSD(price),
-        });
+      const date = keepaTimeToDate(histRow[i]);
+      if ((now - date.getTime()) / 86400000 <= 90) {
+        priceHistory90d.push({ date: date.toISOString().split("T")[0], price: keepaPriceToUSD(price) });
       }
     }
   }
 
-  const currentPrice = keepaPriceToUSD(product.buyBoxPrice || product.newPrice || product.amazonPrice);
-  const avg30 = keepaPriceToUSD(product.stats?.avg30?.[1] || product.stats?.avg30?.[18] || product.buyBoxPrice);
-  const avg90 = keepaPriceToUSD(product.stats?.avg90?.[1] || product.stats?.avg90?.[18] || product.buyBoxPrice);
-  const priceDropPercent = avg30 > 0 ? ((avg90 - currentPrice) / avg90) * 100 : 0;
-
-  // Estimate monthly sales from BSR (rough heuristic for US marketplace)
-  const bsr = product.salesRankReference;
+  const bsr = cur[CSV.SALES] != null && cur[CSV.SALES] > 0 ? cur[CSV.SALES] : (product.salesRankReference || 999999);
   const monthlySalesEst = estimateMonthlySales(bsr, product.salesRankReferenceName);
-
-  // FBA fee estimate (simplified)
-  const fbaFeeEstimate = product.fbaFees?.pickAndPackFee
-    ? keepaPriceToUSD(product.fbaFees.pickAndPackFee)
-    : estimateFbaFee(currentPrice);
+  const sellerCount = cur[CSV.COUNT_NEW] != null && cur[CSV.COUNT_NEW] > 0 ? cur[CSV.COUNT_NEW] : 0;
+  const fbaFeeEstimate = estimateFbaFee(buyBoxPrice > 0 ? buyBoxPrice : amazonPrice);
 
   return {
     asin: product.asin,
     title: product.title || "Unknown product",
     brand: product.brand || "",
-    currentAmazonPrice: keepaPriceToUSD(product.amazonPrice),
-    buyBoxPrice: keepaPriceToUSD(product.buyBoxPrice),
+    currentAmazonPrice: amazonPrice,
+    buyBoxPrice,
     bsrRank: bsr,
     bsrCategory: product.salesRankReferenceName || "Unknown",
     monthlySalesEst,
-    sellerCount: product.totalOfferCount || 0,
+    sellerCount,
     fbaFeeEstimate,
     priceHistory90d,
-    isAmazonSeller: product.csv?.[10]?.[product.csv[10].length - 1] === 1,
+    isAmazonSeller: amazonCents > 0,
     avgPrice30d: avg30,
     avgPrice90d: avg90,
     priceDropPercent,
