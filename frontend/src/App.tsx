@@ -1,6 +1,7 @@
 import { Routes, Route } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { Bell, Search, Sun, Moon, Wifi, WifiOff } from "lucide-react";
+import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Bell, Search, Sun, Moon, Wifi, WifiOff, LogOut } from "lucide-react";
 import { Sidebar } from "./components/layout/Sidebar";
 import { Dashboard } from "./pages/Dashboard";
 import { AgentControl } from "./pages/AgentControl";
@@ -11,11 +12,13 @@ import { AIChat } from "./pages/AIChat";
 import { Workflow } from "./pages/Workflow";
 import { Suppliers } from "./pages/Suppliers";
 import { Bank } from "./pages/Bank";
-import { agentApi, dashboardApi, reportsApi } from "./lib/api";
+import { Login } from "./pages/Login";
+import { agentApi, authApi, dashboardApi, reportsApi, type AuthState } from "./lib/api";
 import { useTheme } from "./lib/theme";
 import { formatCurrency } from "./lib/utils";
 
-function Topbar() {
+function Topbar({ authRequired }: { authRequired: boolean }) {
+  const qc = useQueryClient();
   const { theme, toggle } = useTheme();
   const { data, isError } = useQuery({
     queryKey: ["dashboard"],
@@ -91,6 +94,17 @@ function Topbar() {
           <span className="absolute rounded-full" style={{ width: 7, height: 7, background: "var(--loss)", top: 3, right: 3, border: "1.5px solid var(--background)" }} />
         </button>
 
+        {authRequired && (
+          <button
+            onClick={async () => { await authApi.logout(); qc.clear(); window.location.reload(); }}
+            className="flex items-center justify-center rounded p-1.5 transition-opacity hover:opacity-75"
+            style={{ background: "var(--card)", border: "1px solid var(--border)" }}
+            title="Sign out"
+          >
+            <LogOut size={14} style={{ color: "var(--muted-foreground)" }} />
+          </button>
+        )}
+
         {/* Avatar */}
         <div
           className="flex items-center justify-center rounded-full"
@@ -103,7 +117,7 @@ function Topbar() {
   );
 }
 
-export default function App() {
+function Shell({ auth }: { auth: AuthState }) {
   const { data: agentStatus } = useQuery({
     queryKey: ["agent-status"],
     queryFn: agentApi.getStatus,
@@ -118,10 +132,19 @@ export default function App() {
   const pendingReports = (reports || []).filter((r) => r.status === "completed").length;
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden" style={{ background: "var(--background)", color: "var(--foreground)", fontFamily: "var(--font-sans)" }}>
+    <div className="flex h-screen w-screen flex-col overflow-hidden" style={{ background: "var(--background)", color: "var(--foreground)", fontFamily: "var(--font-sans)" }}>
+      {auth.demo && (
+        <div
+          className="flex flex-shrink-0 items-center justify-center gap-2 px-4 py-1.5 text-center"
+          style={{ background: "var(--warning)", color: "#000", fontSize: 11, fontWeight: 600 }}
+        >
+          Public demo: fictional products and numbers, read-only. No real accounts are connected.
+        </div>
+      )}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
       <Sidebar agentRunning={agentStatus?.isRunning} reportCount={pendingReports} />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <Topbar />
+        <Topbar authRequired={auth.authRequired} />
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <Routes>
             <Route path="/" element={<Dashboard />} />
@@ -137,6 +160,31 @@ export default function App() {
           </Routes>
         </main>
       </div>
+      </div>
     </div>
   );
+}
+
+export default function App() {
+  const qc = useQueryClient();
+  const { data: auth, isLoading, isError } = useQuery({ queryKey: ["auth-me"], queryFn: authApi.me, retry: false });
+
+  // Any API call that comes back 401 sends the user to the login screen
+  useEffect(() => {
+    const onExpired = () =>
+      qc.setQueryData<AuthState>(["auth-me"], (old) => (old ? { ...old, authenticated: false } : old));
+    window.addEventListener("auth:expired", onExpired);
+    return () => window.removeEventListener("auth:expired", onExpired);
+  }, [qc]);
+
+  const fullScreen = (text: string) => (
+    <div className="flex h-screen w-screen items-center justify-center" style={{ background: "var(--background)", color: "var(--muted-foreground)", fontSize: 13 }}>
+      {text}
+    </div>
+  );
+
+  if (isLoading) return fullScreen("Loading…");
+  if (isError || !auth) return fullScreen("Can't reach the server.");
+  if (!auth.authenticated) return <Login onSuccess={() => qc.invalidateQueries()} />;
+  return <Shell auth={auth} />;
 }

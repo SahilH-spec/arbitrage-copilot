@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-security-smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Typecheck and build (frontend + backend)
+        run: npm run build
+      - name: Create test databases
+        run: |
+          psql -h localhost -U postgres -c "CREATE DATABASE smoke_prod"
+          psql -h localhost -U postgres -c "CREATE DATABASE smoke_demo"
+      - name: Security smoke test (login gate, demo read-only, boot guards)
+        run: scripts/smoke-test.sh
+        env:
+          PROD_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/smoke_prod
+          DEMO_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/smoke_demo

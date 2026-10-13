@@ -5,7 +5,7 @@ import { desc, eq, gte, sql, and } from "drizzle-orm";
 import { getSalesStats } from "../services/amazon-sp";
 import { getAgentStatus } from "../services/agent";
 import { getSchedulerStatus } from "../services/scheduler";
-import { isConfigured } from "../config";
+import { config, isConfigured } from "../config";
 
 const router = Router();
 
@@ -34,6 +34,19 @@ router.get("/", async (req, res) => {
       }
     }
 
+    // Demo: derive "today" from the fictional order transactions (no Amazon connection exists)
+    if (config.demo) {
+      const [t] = await db
+        .select({ revenue: sql<number>`coalesce(sum(amount), 0)`, orders: sql<number>`count(*)` })
+        .from(transactions)
+        .where(and(eq(transactions.date, today), eq(transactions.type, "income")));
+      sales.today.revenue = Number(t?.revenue || 0);
+      sales.today.orders = Number(t?.orders || 0);
+      sales.today.units = sales.today.orders;
+      const shape = [0.05, 0.1, 0.18, 0.12, 0.2, 0.15, 0.12, 0.08];
+      sales.hourly = shape.map((f, i) => ({ time: `${8 + i * 2}:00`, revenue: Math.round(sales.today.revenue * f * 100) / 100 }));
+    }
+
     // ── Today's report ──
     const [todayReport] = await db.select().from(reports).where(eq(reports.date, today)).limit(1);
     const recentReports = await db.select().from(reports).orderBy(desc(reports.date)).limit(7);
@@ -45,7 +58,7 @@ router.get("/", async (req, res) => {
         totalValue: sql<number>`coalesce(sum(buy_price * (quantity_at_amazon + quantity_in_stock)), 0)`,
         lowStock: sql<number>`coalesce(sum(case when status = 'low_stock' then 1 else 0 end), 0)`,
         atAmazon: sql<number>`coalesce(sum(quantity_at_amazon), 0)`,
-        withBuyBox: sql<number>`coalesce(sum(case when buy_box_price is not null and current_sell_price is not null and current_sell_price <= buy_box_price then 1 else 0 end), 0)`,
+        withBuyBox: sql<number>`coalesce(sum(case when status = 'active' and buy_box_price is not null and current_sell_price is not null and current_sell_price <= buy_box_price then 1 else 0 end), 0)`,
         totalListings: sql<number>`coalesce(sum(case when status = 'active' then 1 else 0 end), 0)`,
       })
       .from(inventoryItems)

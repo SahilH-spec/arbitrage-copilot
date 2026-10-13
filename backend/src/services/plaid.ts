@@ -3,6 +3,8 @@ import { config, isConfigured } from "../config";
 import { db } from "../db/client";
 import { agentSettings, transactions } from "../db/schema";
 import { eq } from "drizzle-orm";
+import { decryptSecret, encryptSecret, isEncrypted } from "../lib/crypto";
+import { validEncryptionKey } from "../config";
 
 let client: PlaidApi | null = null;
 
@@ -32,6 +34,19 @@ async function setSetting(key: string, value: unknown) {
     .onConflictDoUpdate({ target: agentSettings.key, set: { value: value as never, updatedAt: new Date() } });
 }
 
+// The Plaid access token is a long-lived credential to the bank connection. It is stored
+// AES-256-GCM encrypted. A legacy plaintext value (from before encryption was added) is
+// accepted once and re-saved encrypted.
+async function getAccessToken(): Promise<string | null> {
+  const stored = await getSetting("plaid_access_token");
+  if (typeof stored !== "string" || !stored) return null;
+  if (isEncrypted(stored)) return decryptSecret(stored);
+  if (validEncryptionKey(config.security.encryptionKey)) {
+    await setSetting("plaid_access_token", encryptSecret(stored));
+  }
+  return stored;
+}
+
 export async function isBankConnected(): Promise<boolean> {
   return !!(await getSetting("plaid_access_token"));
 }
@@ -52,14 +67,14 @@ export async function createLinkToken(): Promise<string> {
 // ─── Exchange the public token from Plaid Link for an access token ───────────
 export async function exchangePublicToken(publicToken: string): Promise<void> {
   const resp = await getClient().itemPublicTokenExchange({ public_token: publicToken });
-  await setSetting("plaid_access_token", resp.data.access_token);
+  await setSetting("plaid_access_token", encryptSecret(resp.data.access_token));
   await setSetting("plaid_item_id", resp.data.item_id);
   await setSetting("plaid_cursor", null);
 }
 
 // ─── Account balances ─────────────────────────────────────────────────────────
 export async function getAccounts() {
-  const accessToken = (await getSetting("plaid_access_token")) as string | null;
+  const accessToken = await getAccessToken();
   if (!accessToken) return [];
   const resp = await getClient().accountsBalanceGet({ access_token: accessToken });
   return resp.data.accounts.map((a) => ({
@@ -77,7 +92,7 @@ export async function getAccounts() {
 
 // ─── Sync transactions into the accounting ledger ─────────────────────────────
 export async function syncTransactions(): Promise<{ added: number }> {
-  const accessToken = (await getSetting("plaid_access_token")) as string | null;
+  const accessToken = await getAccessToken();
   if (!accessToken) throw new Error("No bank connected");
 
   let cursor = ((await getSetting("plaid_cursor")) as string | null) || undefined;
@@ -119,7 +134,7 @@ export async function syncTransactions(): Promise<{ added: number }> {
 }
 
 export async function disconnectBank(): Promise<void> {
-  const accessToken = (await getSetting("plaid_access_token")) as string | null;
+  const accessToken = await getAccessToken();
   if (accessToken) {
     try { await getClient().itemRemove({ access_token: accessToken }); } catch { /* ignore */ }
   }
