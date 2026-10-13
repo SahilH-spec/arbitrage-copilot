@@ -7,6 +7,7 @@ import {
 import { Header } from "@/components/layout/Header";
 import { accountingApi, AccountingSummary, Transaction } from "@/lib/api";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
+import { STATIC_DEMO, READ_ONLY_MESSAGE } from "@/lib/staticDemo";
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Legend,
 } from "recharts";
@@ -78,6 +79,7 @@ export function Accounting() {
   const txList = (transactions as Transaction[]) || [];
 
   const handleImportCSV = () => {
+    if (STATIC_DEMO) { alert(READ_ONLY_MESSAGE); return; }
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".csv";

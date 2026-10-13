@@ -2,12 +2,14 @@
 
 [![CI](https://github.com/SahilH-spec/arbitrage-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/SahilH-spec/arbitrage-copilot/actions/workflows/ci.yml)
 
-AI-powered Amazon online arbitrage business management app. Built with React + Express + PostgreSQL, deployed to Railway.
+AI-powered Amazon online arbitrage business management app. Built with React + Express + PostgreSQL.
 A Claude agent researches products every night, scores them against explicit criteria, and the app tracks
 inventory, Buy Box position and profit across Amazon SP-API, Keepa, and a Plaid bank connection.
 
-> I ran an Amazon arbitrage business and built this to run it. The screenshots below use a fictional
-> dataset (invented brands, ASINs and orders) from the app's read-only demo mode.
+**Live demo: https://sahilh-spec.github.io/arbitrage-copilot/** (static, fictional data, no backend or API keys)
+
+> I ran an Amazon arbitrage business and built this to run it. The live demo and screenshots use a fictional
+> dataset (invented brands, ASINs and orders) from the app's demo mode.
 
 ![Dashboard (fictional demo data)](docs/screenshots/dashboard.png)
 
@@ -85,7 +87,7 @@ npm run dev
 # Backend API: http://localhost:3001
 ```
 
-## Railway Deployment
+## Self-hosted deployment (Railway)
 
 ### 1. Create Railway Project
 ```bash
@@ -207,10 +209,16 @@ This app holds API keys, an Amazon seller connection and a bank link, so it is l
 
 ## Public demo mode
 
-`DEMO_MODE=true` turns the same app into a safe showcase: fictional data, **read-only** (every write and every
-route that would spend API credits returns 403), all integrations forced off even if keys are present, no scheduler.
-It only runs against its own empty database and refuses to start on a database holding real data. Run it as a
-second service with its own Postgres; see [docs/DEPLOY.md](docs/DEPLOY.md).
+Two ways to show the app without exposing real data:
+
+- **Static demo on GitHub Pages** (what the live link above runs): the React app is built with
+  `VITE_STATIC_DEMO=true`. It makes no network calls to a backend; every screen reads fictional JSON fixtures
+  from `frontend/public/demo-api/`, dates are shifted so the data always looks current, writes are disabled,
+  and the AI chat streams a canned reply. `.github/workflows/pages.yml` builds and publishes it on every push to `main`.
+  To refresh the fixtures: run the backend with `DEMO_MODE=true` against an empty database, then
+  `node scripts/record-static-demo.mjs http://localhost:3001`.
+- **Server demo mode** (`DEMO_MODE=true`): the real backend serving the same fictional dataset read-only, with every
+  integration disabled. It refuses to start against a database that holds real data. See `docs/DEPLOY.md`.
 
 ## Support
 

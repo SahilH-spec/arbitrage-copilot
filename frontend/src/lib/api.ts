@@ -1,6 +1,9 @@
+import { STATIC_DEMO, staticRequest, staticChat } from "./staticDemo";
+
 const BASE = "/api";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if (STATIC_DEMO) return staticRequest<T>(path, init);
   const res = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json", ...init?.headers },
     credentials: "same-origin",
@@ -151,6 +154,7 @@ export const chatApi = {
     onDone: () => void,
     onError: (msg: string) => void
   ) => {
+    if (STATIC_DEMO) return staticChat(message, onChunk, onDone);
     const response = await fetch("/api/chat/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

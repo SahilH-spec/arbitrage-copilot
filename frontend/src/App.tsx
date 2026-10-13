@@ -15,6 +15,7 @@ import { Bank } from "./pages/Bank";
 import { Login } from "./pages/Login";
 import { agentApi, authApi, dashboardApi, reportsApi, type AuthState } from "./lib/api";
 import { useTheme } from "./lib/theme";
+import { STATIC_DEMO } from "./lib/staticDemo";
 import { formatCurrency } from "./lib/utils";
 
 function Topbar({ authRequired }: { authRequired: boolean }) {
@@ -138,7 +139,9 @@ function Shell({ auth }: { auth: AuthState }) {
           className="flex flex-shrink-0 items-center justify-center gap-2 px-4 py-1.5 text-center"
           style={{ background: "var(--warning)", color: "#000", fontSize: 11, fontWeight: 600 }}
         >
-          Public demo: fictional products and numbers, read-only. No real accounts are connected.
+          {STATIC_DEMO
+            ? "Static demo on GitHub Pages: fictional products and numbers, no backend, no real accounts connected."
+            : "Public demo: fictional products and numbers, read-only. No real accounts are connected."}
         </div>
       )}
       <div className="flex min-h-0 flex-1 overflow-hidden">
