@@ -54,6 +54,9 @@ export function AIChat() {
       { id: Date.now(), role: "user", content: text, createdAt: new Date().toISOString() },
     ];
 
+    // Show the user's message right away, while the reply streams in
+    qc.setQueryData(["chat-messages", sessionId], optimisticMessages);
+
     let accumulated = "";
 
     await chatApi.sendMessage(

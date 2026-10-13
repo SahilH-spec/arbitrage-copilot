@@ -9,6 +9,10 @@ import { isConfigured } from "../config";
 
 const router = Router();
 
+// agent_settings also holds internal state (the encrypted Plaid token, bank cursor, demo marker).
+// Those keys must never be readable or writable through the settings API.
+const INTERNAL_KEY = /^(plaid_|demo_)/;
+
 // GET /api/agent/status
 router.get("/status", async (req, res) => {
   try {
@@ -55,7 +59,7 @@ router.get("/settings", async (req, res) => {
   try {
     const settings = await db.select().from(agentSettings);
     const map: Record<string, unknown> = {};
-    settings.forEach((s) => { map[s.key] = s.value; });
+    settings.forEach((s) => { if (!INTERNAL_KEY.test(s.key)) map[s.key] = s.value; });
     res.json(map);
   } catch (err) {
     res.status(500).json({ error: "Failed to get settings" });
@@ -68,6 +72,7 @@ router.put("/settings", async (req, res) => {
     const updates = req.body as Record<string, unknown>;
 
     for (const [key, value] of Object.entries(updates)) {
+      if (INTERNAL_KEY.test(key)) continue;
       await db
         .insert(agentSettings)
         .values({ key, value: value as never })

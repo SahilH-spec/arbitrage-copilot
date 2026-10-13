@@ -1,16 +1,37 @@
+import { STATIC_DEMO, staticRequest, staticChat } from "./staticDemo";
+
 const BASE = "/api";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if (STATIC_DEMO) return staticRequest<T>(path, init);
   const res = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json", ...init?.headers },
+    credentials: "same-origin",
     ...init,
   });
+  // Session expired or never logged in: let the app show the login screen
+  if (res.status === 401 && !path.startsWith("/auth/")) {
+    window.dispatchEvent(new Event("auth:expired"));
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error((body as { error?: string }).error || res.statusText);
   }
   return res.json();
 }
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+export interface AuthState {
+  demo: boolean;
+  authRequired: boolean;
+  authenticated: boolean;
+}
+export const authApi = {
+  me: () => request<AuthState>("/auth/me"),
+  login: (password: string) =>
+    request<{ authenticated: boolean }>("/auth/login", { method: "POST", body: JSON.stringify({ password }) }),
+  logout: () => request<{ authenticated: boolean }>("/auth/logout", { method: "POST" }),
+};
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 export const dashboardApi = {
@@ -133,11 +154,17 @@ export const chatApi = {
     onDone: () => void,
     onError: (msg: string) => void
   ) => {
+    if (STATIC_DEMO) return staticChat(message, onChunk, onDone);
     const response = await fetch("/api/chat/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message, sessionId }),
     });
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({ error: response.statusText }));
+      return onError((body as { error?: string }).error || response.statusText);
+    }
 
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();

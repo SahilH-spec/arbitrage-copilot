@@ -1,6 +1,36 @@
 # Arbitrage Copilot
 
-AI-powered Amazon online arbitrage business management app. Built with React + Express, deployed to Railway.
+[![CI](https://github.com/SahilH-spec/arbitrage-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/SahilH-spec/arbitrage-copilot/actions/workflows/ci.yml)
+
+AI-powered Amazon online arbitrage business management app. Built with React + Express + PostgreSQL.
+A Claude agent researches products every night, scores them against explicit criteria, and the app tracks
+inventory, Buy Box position and profit across Amazon SP-API, Keepa, and a Plaid bank connection.
+
+**Live demo: https://sahilh-spec.github.io/arbitrage-copilot/** (static, fictional data, no backend or API keys)
+
+> I ran an Amazon arbitrage business and built this to run it. The live demo and screenshots use a fictional
+> dataset (invented brands, ASINs and orders) from the app's demo mode.
+
+![Dashboard (fictional demo data)](docs/screenshots/dashboard.png)
+
+| Nightly report: AI-scored products | Inventory with Buy Box and stranded-listing alerts |
+|---|---|
+| ![Nightly report](docs/screenshots/nightly-report.png) | ![Inventory](docs/screenshots/inventory.png) |
+
+![Accounting: P&L, trends, category breakdown](docs/screenshots/accounting.png)
+
+## How it fits together
+
+```
+React + Vite UI ──► Express API (login required) ──► PostgreSQL (Drizzle ORM)
+                         │
+                         ├─ Claude: nightly research agent, report scoring, chat, inventory alerts
+                         │    (optional Anthropic Managed Agent: its tool calls run on this server,
+                         │     so Keepa/Amazon/Plaid secrets never leave it)
+                         ├─ Amazon SP-API: orders, FBA inventory, listing prices
+                         ├─ Keepa + Brave Search: price history and product research
+                         └─ Plaid: business bank transactions into the ledger
+```
 
 ## Features
 
@@ -57,7 +87,7 @@ npm run dev
 # Backend API: http://localhost:3001
 ```
 
-## Railway Deployment
+## Self-hosted deployment (Railway)
 
 ### 1. Create Railway Project
 ```bash
@@ -81,9 +111,12 @@ AMAZON_SP_APP_ID=...
 AMAZON_SP_CLIENT_SECRET=...
 AMAZON_SP_REFRESH_TOKEN=...
 AMAZON_SELLER_ID=...
-SESSION_SECRET=<random-64-char-hex>
+APP_PASSWORD=<12+ characters: the owner login>
 JWT_SECRET=<random-64-char-hex>
+ENCRYPTION_KEY=<random-64-char-hex>   # encrypts the Plaid token at rest; back it up
+NODE_ENV=production
 ```
+The server refuses to start in production without `APP_PASSWORD` and `JWT_SECRET`.
 
 ### 4. Deploy
 ```bash
@@ -157,6 +190,35 @@ The AI agent scores each product 0-100 based on:
 | Profit Margin | 5% | ≥ 25% net |
 
 Products scoring ≥ 60 appear in the nightly report.
+
+## Security
+
+This app holds API keys, an Amazon seller connection and a bank link, so it is locked down:
+
+- **Login required.** Every `/api` route except `/api/health` needs a session (single owner password,
+  constant-time check, signed 12-hour `HttpOnly` + `SameSite=Strict` + `Secure` cookie). Login is rate-limited
+  (8 attempts / 15 min / IP).
+- **Fails closed.** In production the server will not boot without `APP_PASSWORD`, a strong `JWT_SECRET`, and
+  (when Plaid is configured) a valid `ENCRYPTION_KEY`.
+- **Secrets at rest.** The Plaid access token is stored AES-256-GCM encrypted. A pre-existing plaintext token is
+  re-encrypted the first time it is used. The settings API never returns or accepts internal keys.
+- **Secrets stay on the server.** The Managed Agent's tool calls (Keepa, Amazon, repricing, saving reports) execute
+  here; third-party keys are never sent to the agent sandbox.
+- **Tested.** `scripts/smoke-test.sh` runs in CI against a real Postgres: unauthenticated requests get 401, forged
+  tokens are rejected, and demo mode is read-only.
+
+## Public demo mode
+
+Two ways to show the app without exposing real data:
+
+- **Static demo on GitHub Pages** (what the live link above runs): the React app is built with
+  `VITE_STATIC_DEMO=true`. It makes no network calls to a backend; every screen reads fictional JSON fixtures
+  from `frontend/public/demo-api/`, dates are shifted so the data always looks current, writes are disabled,
+  and the AI chat streams a canned reply. `.github/workflows/pages.yml` builds and publishes it on every push to `main`.
+  To refresh the fixtures: run the backend with `DEMO_MODE=true` against an empty database, then
+  `node scripts/record-static-demo.mjs http://localhost:3001`.
+- **Server demo mode** (`DEMO_MODE=true`): the real backend serving the same fictional dataset read-only, with every
+  integration disabled. It refuses to start against a database that holds real data. See `docs/DEPLOY.md`.
 
 ## Support
 

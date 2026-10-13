@@ -3,8 +3,12 @@ import path from "path";
 
 dotenv.config({ path: path.join(__dirname, "../../.env") });
 
+const demo = process.env.DEMO_MODE === "true";
+
 export const config = {
   env: process.env.NODE_ENV || "development",
+  /** Public read-only showcase: fictional data, no writes, no external API calls. */
+  demo,
   port: parseInt(process.env.PORT || "3001"),
   frontendUrl: process.env.FRONTEND_URL || "http://localhost:5173",
 
@@ -49,8 +53,12 @@ export const config = {
   },
 
   security: {
-    sessionSecret: process.env.SESSION_SECRET || "dev-session-secret",
     jwtSecret: process.env.JWT_SECRET || "dev-jwt-secret",
+    /** Single-owner login password. Required in production (unless DEMO_MODE). */
+    appPassword: process.env.APP_PASSWORD || "",
+    /** 32-byte key (64 hex chars or base64) used to encrypt stored secrets such as the Plaid token. */
+    encryptionKey: process.env.ENCRYPTION_KEY || "",
+    sessionTtlHours: parseInt(process.env.SESSION_TTL_HOURS || "12"),
   },
 
   agent: {
@@ -61,12 +69,53 @@ export const config = {
   },
 };
 
+// In demo mode every integration reports as not configured, so no code path can
+// reach Amazon, Plaid, Keepa, Brave, SMTP or Anthropic even if keys are present.
+const flag = (v: boolean) => v && !config.demo;
+
 export const isConfigured = {
-  anthropic: !!config.anthropic.apiKey,
-  managedAgent: !!config.anthropic.managedAgentId && !!config.anthropic.managedEnvId,
-  amazon: !!config.amazon.appId && !!config.amazon.refreshToken,
-  keepa: !!config.keepa.apiKey,
-  brave: !!config.brave.apiKey,
-  plaid: !!config.plaid.clientId && !!config.plaid.secret,
-  email: !!config.email.user && !!config.email.pass,
+  anthropic: flag(!!config.anthropic.apiKey),
+  managedAgent: flag(!!config.anthropic.managedAgentId && !!config.anthropic.managedEnvId),
+  amazon: flag(!!config.amazon.appId && !!config.amazon.refreshToken),
+  keepa: flag(!!config.keepa.apiKey),
+  brave: flag(!!config.brave.apiKey),
+  plaid: flag(!!config.plaid.clientId && !!config.plaid.secret),
+  email: flag(!!config.email.user && !!config.email.pass),
 };
+
+/** Login is enforced whenever a password is set (always, in production). Never in demo mode. */
+export const authRequired = !config.demo && !!config.security.appPassword;
+
+function validEncryptionKey(raw: string): boolean {
+  const buf = /^[0-9a-fA-F]{64}$/.test(raw) ? Buffer.from(raw, "hex") : Buffer.from(raw, "base64");
+  return buf.length === 32;
+}
+
+/**
+ * Refuse to boot a production server that would be open or weakly protected.
+ * Called once at startup, before the server listens.
+ */
+export function assertSecureConfig(): void {
+  if (config.demo) {
+    console.warn("[Security] DEMO_MODE: read-only, fictional data, all integrations disabled.");
+    return;
+  }
+  const { jwtSecret, appPassword, encryptionKey } = config.security;
+  if (config.env !== "production") {
+    if (!appPassword) console.warn("[Security] APP_PASSWORD not set: login is DISABLED (development only).");
+    return;
+  }
+  const problems: string[] = [];
+  if (jwtSecret === "dev-jwt-secret" || jwtSecret.length < 32) {
+    problems.push("JWT_SECRET must be set to a random string of at least 32 characters");
+  }
+  if (appPassword.length < 12) problems.push("APP_PASSWORD must be set (at least 12 characters)");
+  if (isConfigured.plaid && !validEncryptionKey(encryptionKey)) {
+    problems.push("ENCRYPTION_KEY must be 32 bytes (64 hex chars) when Plaid is configured");
+  }
+  if (problems.length) {
+    throw new Error("Insecure production configuration:\n - " + problems.join("\n - "));
+  }
+}
+
+export { validEncryptionKey };

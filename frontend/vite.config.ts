@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 
 export default defineConfig({
+  // GitHub Pages serves the static demo from /<repo>/; set by the Pages workflow.
+  base: process.env.VITE_BASE || "/",
   plugins: [react()],
   resolve: {
     alias: {
